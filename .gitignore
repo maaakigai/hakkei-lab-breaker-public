@@ -1,0 +1,47 @@
+node_modules/
+dist/
+.venv/
+*.log
+*.pyc
+*.bak*
+.DS_Store
+__pycache__/
+
+# Electron / build artifacts
+out/
+release/
+
+# Unity (project-local, see unity-bridge/.gitignore for its own rules)
+unity-bridge/Library/
+unity-bridge/Temp/
+unity-bridge/Obj/
+unity-bridge/Logs/
+unity-bridge/UserSettings/
+
+# Local agent / editor settings (machine-specific, do not share)
+.claude/settings.local.json
+.codex/
+
+# Local public-demo switch and short-lived session data
+CloudServer/hakkei-score-server/.public-demo-mode
+CloudServer/hakkei-score-server/public-demo-runtime/
+
+# mocopi BLE 生キャプチャ録画（ローカル。tools/ で再生成・replay はローカル運用）
+ble-*.csv
+tools/__pycache__/
+
+# Local verification screenshots / generated review artifacts
+.tmp/
+artifacts/
+output/
+outputs/
+*-raw.csv
+
+# Local video editor backup / temp folders
+assets/videos/Backups/
+assets/videos/Temp/
+
+# 実機実験用の状態遷移ログ（診断出力）
+logs/
+docs/presentation_7min_slides.html
+docs/presentation_7min_slides.pdf

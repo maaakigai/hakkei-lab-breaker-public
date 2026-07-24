@@ -1,0 +1,21 @@
+# Result ranking summary
+
+- 対象ステップ: Result画面の `LAB DAMAGE ESTIMATE` と `EXIT` の間にRanking Board基準の自己ベスト順位カードを追加する。
+- 変更ファイル: `src/renderer/app.ts`, `src/renderer/styles.css`, `docs/verification_checklist.md`, `docs/runs/20260710-result-ranking-summary.md`。
+- 採用した判断: `NEW HIGH SCORE` は `TOTAL DAMAGE` 金額直下の短い表示として残し、Ranking Board情報は別カードとして `LAB DAMAGE ESTIMATE` の下、`EXIT` の上に置く。
+- 理由・根拠: `NEW HIGH SCORE` は今回の損害額に対する補足であり、Ranking Boardは自己ベスト順位の説明である。画面内で役割を分けることで、今回スコア順位と自己ベスト順位の混同を避ける。
+- 採用した判断: High Score更新時はPOST前のサーバーRanking Boardを退避し、POST後のboardと比較して `PREVIOUS #n → CURRENT #m` を出す。順位が上がった場合だけ `↑` を付ける。
+- 理由・根拠: Result表示はサーバー正本のRanking Boardに準拠する必要があるため、ローカル推定だけで順位を出さない。POST前後のboardを比較すれば、更新前後の自己ベスト順位を説明できる。
+- 採用した判断: High Score更新なしの場合は、今回スコア順位ではなく `PERSONAL BEST` と自己ベスト順位を表示する。
+- 理由・根拠: Resultの大きな数値は今回スコアであり、Ranking BoardはHigh Score基準である。低い再プレイ時に今回スコア順位のように見せないため、自己ベスト表示として明示する。
+- 採用した判断: High Score更新なしの表示では、`PERSONAL BEST` 行と `RANK` 行を分け、`#11` などの順位番号はHigh Score金額と同じ強さで表示する。
+- 理由・根拠: 自己ベスト金額と自己ベスト順位は同じRanking Board情報なので、順位だけが説明テキストに埋もれると重要度が低く見えるため。
+- 2026-07-10追記: `PERSONAL BEST` と `RANK` は2列グリッドでラベル列と値列を揃え、`RANK` の順位番号は専用クラスでHigh Score金額より一段大きく表示する。
+- 2026-07-10追記: 順位色は `#1`〜`#3` をRank S色、`#4`〜`#9` をRank A色、`#10`〜`#15` をRank B色、`#16`〜`#20` をRank C色、`#21`〜`#25` をRank D色、`#26`以降をRank E色に固定した。
+- 理由・根拠: Ranking Boardの順位帯をResult画面上でもRank色と対応させることで、数字だけの順位よりも現在位置が読み取りやすい。色値は既存 `.rank-S`〜`.rank-E` と同じ値を使い、スコアランク表示との視覚契約を増やさない。
+- 2026-07-10追記2: `#1` / `#2` / `#3` はそれぞれ `rank-top-1` / `rank-top-2` / `rank-top-3` を付け、金・銀・銅のグラデーションと発光でRank S色よりリッチに表示する。
+- 理由・根拠: 表彰台の3枠はRanking Board内で特別な意味を持つため、同じRank S色の範囲内に埋もれないよう視覚的な優先度を上げる。`#4`以降の順位帯ルールは維持し、順位意味の階層だけを追加した。
+- 2026-07-10追記3: Result内カードの見出しは一覧画面名の `RANKING BOARD` ではなく、High Score更新時は `RANK UPDATE`、通常時は `PERSONAL BEST RESULT` にした。通常時の金額ラベルは重複を避けて `BEST DAMAGE` にした。
+- 理由・根拠: Result内カードはランキング一覧そのものではなく、現在プレイヤーの自己ベストとRanking Board内順位の要約である。`RANKING BOARD` だけだと画面遷移先や一覧名に見えやすいため、表示内容に合わせた見出しへ寄せた。
+- 確認結果: `npm run typecheck` PASS。`npm run build` PASS。`node --test test/ranking-store.test.mjs` PASS。
+- 手動確認: High Score更新時、`LAB DAMAGE ESTIMATE` と `EXIT` の間に `PREVIOUS #n → CURRENT #m` が表示され、順位上昇時だけ `↑` が付くことを見る。High Score更新なしでは `PERSONAL BEST` と自己ベスト順位が出ること、同期中/失敗時に古い順位を現在順位として表示しないことを確認する。

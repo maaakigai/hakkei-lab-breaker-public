@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "appName": "発勁ラボブレイカー",
+  "defaultInputMode": "keyboard",
+  "locale": "ja-JP",
+  "timers": {
+    "calibrationPrepMs": 3000,
+    "readyCountdownMs": 3000,
+    "chargePrepMs": 3000,
+    "chargeMs": 10000,
+    "verticalChargeMs": 10000,
+    "forwardChargeMs": 10000,
+    "hakkeiPrepMs": 3000,
+    "hakkeiReadyTimeoutMs": 5000,
+    "idleEnabled": false,
+    "idleEventMs": 15000,
+    "impactDelayMs": 0
+  },
+  "video": {
+    "stalledTimeoutMs": 2000,
+    "endedGraceMs": 1000
+  },
+  "audio": {
+    "missingIsFatal": false,
+    "bgm": {
+      "file": "BGM/placeholder-main-loop.wav",
+      "loop": true,
+      "volume": 0.8,
+      "autoplay": true
+    },
+    "chargeSound": {
+      "file": "SFX/placeholder-charge-loop.wav",
+      "loop": true,
+      "volume": 4
+    },
+    "overchargeSound": {
+      "file": "SFX/placeholder-overcharge-loop.wav",
+      "loop": true,
+      "volume": 7
+    },
+    "phaseCues": {
+      "chargeStart": {
+        "file": "SFX/placeholder-cue-charge-start.wav",
+        "volume": 5,
+        "image": "cues/cue-charge-start.png"
+      },
+      "stance": {
+        "file": "SFX/placeholder-cue-stance.wav",
+        "volume": 10,
+        "image": "cues/cue-stance.png"
+      },
+      "stanceOvercharge": {
+        "file": "SFX/placeholder-cue-stance-overcharge.wav",
+        "volume": 7.5,
+        "image": "cues/cue-stance-overcharge.png"
+      },
+      "punch": {
+        "file": "SFX/placeholder-cue-punch.wav",
+        "volume": 10,
+        "image": "cues/cue-punch.png"
+      },
+      "punchOvercharge": {
+        "file": "SFX/placeholder-cue-punch-overcharge.wav",
+        "volume": 7.5,
+        "image": "cues/cue-punch-overcharge.png"
+      },
+      "stanceLeadSec": 0.25,
+      "punchLeadSec": 0.1
+    },
+    "resultVoiceSfx": {
+      "normalCount": 10,
+      "normalVolume": 3,
+      "uniqueVolume": 2.25,
+      "featuredVolume": 3,
+      "featuredProbability": 0.25,
+      "baseDelayMs": 0,
+      "staggerMs": 460,
+      "jitterMs": 240
+    }
+  },
+  "diagnostics": {
+    "statusIntervalMs": 250,
+    "diagnosticsIntervalMs": 500
+  },
+  "remoteSession": {
+    "enabled": true,
+    "httpBaseUrl": "https://score.hakkei.org",
+    "wsUrl": "wss://score.hakkei.org/ws",
+    "fallbackPollingMs": 1500,
+    "reconnectMinMs": 500,
+    "reconnectMaxMs": 5000
+  }
+}

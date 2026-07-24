@@ -1,0 +1,2887 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: #09090d;
+  color: #f2f2f5;
+  font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", system-ui, sans-serif;
+}
+
+#app {
+  height: 100%;
+}
+
+.screen {
+  min-height: 100%;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  gap: 0.5rem;
+  overflow-y: auto;
+  /* 縦スクロールバー出現で中身が右から削られ、hero 全体が物理中央から左へ寄るのを防ぐ
+     （両端に対称ガターを常時確保。折返しで縦が伸びる画面でもセンターが動かない）。 */
+  scrollbar-gutter: stable both-edges;
+}
+
+.screen::before,
+.screen::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.screen::before {
+  z-index: -2;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.18)),
+    url("images/lab-backgrounds/lab-main-front-16x9-privacy.png") center / cover no-repeat;
+}
+
+.screen-Ready::before,
+.screen-Charge::before,
+.screen-HakkeiReady::before,
+.screen-ImpactDelay::before {
+  background: url("images/lab-backgrounds/lab-main-front-16x9-privacy.png") center / cover no-repeat;
+}
+
+.screen::after {
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.screen-Ready::after,
+.screen-Charge::after,
+.screen-HakkeiReady::after,
+.screen-ImpactDelay::after {
+  background: transparent;
+}
+
+.screen-Ready::after {
+  background: rgba(0, 0, 0, 0.62);
+  animation: gameplayBrightenIn 560ms ease-out forwards;
+}
+
+@keyframes gameplayBrightenIn {
+  from {
+    background: rgba(0, 0, 0, 0.62);
+  }
+
+  to {
+    background: rgba(0, 0, 0, 0);
+  }
+}
+
+/* Titleはシネマティックに暗くし、中央を締めるビネットで白ロゴとメニューを立たせる。 */
+.screen-Title::after {
+  background:
+    radial-gradient(ellipse 80% 64% at 50% 42%, rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0) 72%),
+    linear-gradient(180deg, rgba(3, 4, 8, 0.64) 0%, rgba(3, 4, 8, 0.74) 46%, rgba(3, 4, 8, 0.9) 100%);
+}
+
+.screen-Charge {
+  padding-bottom: 13rem;
+}
+
+/* チャージ量(--charge 0..1)で背景が沈み、画面端がエネルギーで発光する。
+   ゲージのアートは変えず、画面全体を1つの色ステートで盛り上げる（app.ts applyChargeScreenState が駆動）。 */
+.screen-Charge::after {
+  background: rgba(2, 3, 7, calc(0.08 + 0.42 * var(--charge, 0)));
+  box-shadow: inset 0 0 140px 6px rgba(74, 200, 255, calc(0.32 * var(--charge, 0)));
+}
+
+/* 100%到達で端グローがゴールドへ。 */
+.screen-Charge.charge-full::after {
+  box-shadow: inset 0 0 165px 12px rgba(255, 178, 84, 0.44);
+}
+
+/* 高オーバーチャージ(tier3+)で端グローが赤く脈動＝限界突破の合図。 */
+.screen-Charge.charge-over-3::after,
+.screen-Charge.charge-over-4::after,
+.screen-Charge.charge-over-5::after {
+  box-shadow: inset 0 0 190px 18px rgba(255, 58, 44, 0.5);
+  animation: chargeEdgePulse 0.55s ease-in-out infinite;
+}
+
+@keyframes chargeEdgePulse {
+  50% {
+    box-shadow: inset 0 0 230px 26px rgba(255, 58, 44, 0.8);
+  }
+}
+
+/* バナー(SWING YOUR ARM!)もゲージと同じ色ステートで反応。 */
+.game-prompt.charge-full:not(.charge-over) .game-prompt-command {
+  color: #ffdd93;
+  text-shadow: 0 0 14px rgba(255, 176, 82, 0.8), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.game-prompt.charge-over .game-prompt-command {
+  color: #ff6a4d;
+  text-shadow: 0 0 18px rgba(255, 66, 44, 0.92), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.game-prompt.charge-over {
+  border-top-color: rgba(255, 150, 90, 0.7);
+  border-bottom-color: rgba(255, 76, 52, 0.9);
+  animation: promptOverchargeFlash 0.5s ease-in-out infinite;
+}
+
+@keyframes promptOverchargeFlash {
+  50% {
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.32),
+      0 0 28px rgba(255, 60, 45, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -1px 0 rgba(255, 157, 106, 0.24);
+  }
+}
+
+.screen-VideoPlayback::after {
+  background: transparent;
+}
+
+.statebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.4rem 0.8rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #aeb4cf;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.statebar .keys {
+  color: #6b7088;
+}
+
+.content {
+  max-width: 640px;
+  width: min(720px, 92vw);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+}
+
+.screen-InputCheck .content,
+.screen-Result .content,
+.screen-Error .content {
+  max-width: 760px;
+}
+
+.screen-VideoPlayback {
+  padding: 0;
+  overflow: hidden;
+}
+
+.screen-VideoPlayback .content {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  text-shadow: none;
+}
+
+.screen-Result {
+  overflow: hidden;
+}
+
+.screen-Result .content {
+  position: relative;
+  z-index: 0;
+}
+
+.screen-Result::after {
+  background: transparent;
+}
+
+.screen-InputCheck {
+  justify-content: flex-start;
+  padding-top: 4.5rem;
+  padding-bottom: 2rem;
+}
+
+.title {
+  font-size: 3rem;
+  letter-spacing: 0.15em;
+  margin: 0 0 0.4rem;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.95), 0 0 24px rgba(120, 160, 255, 0.45);
+}
+
+.subtitle {
+  color: #9aa0b5;
+  margin: 0 0 1.5rem;
+}
+
+h2 {
+  font-size: 1.8rem;
+  letter-spacing: 0.08em;
+}
+
+/* Result 画面の見出し「RESULT」を派手に：銀×蒼のグラデ＋発光でタイトル感を出す。 */
+.screen-Result .content > h2 {
+  margin: 0.1rem 0 0.15rem;
+  font-size: clamp(2.1rem, 4.4vw, 3.6rem);
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #ffffff 0%, #eaf0ff 46%, #b8c8f0 78%, #8ea6dc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85))
+    drop-shadow(0 0 24px rgba(120, 170, 255, 0.5));
+  animation: resultTitleIn 620ms cubic-bezier(0.16, 0.88, 0.22, 1) both;
+}
+
+@keyframes resultTitleIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.hint {
+  color: #8089a3;
+  font-size: 0.9rem;
+}
+
+.lab-preview {
+  margin: 0.8rem auto 1rem;
+  width: min(640px, 86vw);
+}
+
+.lab-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #2a2e42;
+  background: #05050a;
+}
+
+.lab-preview figcaption {
+  margin-top: 0.25rem;
+  color: #8089a3;
+  font-size: 0.75rem;
+}
+
+.safety {
+  list-style: none;
+  padding: 0.8rem 1rem;
+  margin: 1rem auto;
+  max-width: 480px;
+  text-align: left;
+  border: 1px solid rgba(255, 212, 121, 0.4);
+  border-radius: 8px;
+  color: #ffd479;
+  font-weight: 600;
+}
+
+.safety li {
+  margin: 0.2rem 0;
+}
+
+.mode-select {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid #3a3f55;
+  background: #1d2030;
+  color: #e8eaf2;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button:hover {
+  background: #262a3d;
+}
+
+button.primary {
+  background: #3a56d4;
+  border-color: #4a66e4;
+  color: #fff;
+}
+
+button.primary:hover {
+  background: #4760e0;
+}
+
+button.mode.selected {
+  border-color: #6ad4ff;
+  box-shadow: 0 0 0 2px rgba(106, 212, 255, 0.3);
+}
+
+button.quiet,
+.settings-link {
+  background: rgba(13, 16, 25, 0.62);
+  border-color: rgba(190, 202, 230, 0.24);
+  color: #d9deee;
+}
+
+.title-start {
+  min-width: 12rem;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.settings-link {
+  margin-top: 1rem;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.settings-panel {
+  margin: 0.8rem auto 0;
+}
+
+.dev-link {
+  margin-top: 2rem;
+  background: transparent;
+  border: none;
+  color: #555b73;
+  font-size: 0.78rem;
+  text-decoration: underline;
+}
+
+.dev-link.dev-open {
+  padding: 0.55rem 0.9rem;
+  border: 1px dashed #6ad4ff;
+  background: rgba(30, 55, 80, 0.45);
+  color: #9ee4ff;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.dev-link.dev-open:hover {
+  background: rgba(42, 78, 112, 0.7);
+}
+
+/* ===== Title画面（UBI-Lab Break Simulator・シネマティックメニュー） ===== */
+.title-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(1.6rem, 4vh, 3rem);
+  width: 100%;
+}
+
+.title-logo {
+  width: min(1180px, 94vw);
+  height: auto;
+  margin-top: -0.4rem;
+  user-select: none;
+  filter: drop-shadow(0 8px 30px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 52px rgba(120, 160, 255, 0.18));
+  animation: titleLogoIn 900ms cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+
+@keyframes titleLogoIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+    filter: drop-shadow(0 6px 26px rgba(0, 0, 0, 0.85)) blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 6px 26px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 40px rgba(120, 160, 255, 0.14));
+  }
+}
+
+.ac-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+  width: min(430px, 82vw);
+  animation: titleMenuIn 700ms ease-out 320ms both;
+}
+
+@keyframes titleMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ac-menu-item {
+  position: relative;
+  padding: 0.74rem 1.2rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(214, 224, 240, 0.5);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  text-align: center;
+  text-indent: 0.34em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 2px 16px rgba(0, 0, 0, 0.85);
+  cursor: pointer;
+  transition: color 0.16s ease, letter-spacing 0.18s ease;
+}
+
+/* 選択ハイライト: このゲームの発勁エネルギー配色（ゴールドの帯＋シアン上辺/オレンジ下辺）。
+   game-prompt バナーと揃えた六角クリップで衝撃感を出す。銀モノトーンのAC調は踏襲しない。 */
+.ac-menu-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 180, 90, 0) 0%,
+    rgba(94, 221, 255, 0.1) 12%,
+    rgba(255, 214, 140, 0.34) 50%,
+    rgba(255, 157, 106, 0.12) 88%,
+    rgba(255, 140, 80, 0) 100%
+  );
+  border-top: 1px solid rgba(120, 232, 255, 0.78);
+  border-bottom: 1px solid rgba(255, 140, 80, 0.72);
+  box-shadow: 0 0 20px rgba(255, 150, 70, 0.16), inset 0 0 22px rgba(94, 221, 255, 0.08);
+  clip-path: polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%);
+  transition: opacity 0.18s ease;
+}
+
+/* 下の細いエネルギーライン（選択時に灯る）。 */
+.ac-menu-item::after {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 2px;
+  height: 2px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 196, 120, 0.95), transparent);
+  filter: drop-shadow(0 0 5px rgba(255, 120, 60, 0.6));
+  transition: opacity 0.18s ease;
+}
+
+.ac-menu-item:hover,
+.ac-menu-item:focus-visible,
+.ac-menu-item.selected {
+  color: #fff2df;
+  outline: none;
+  text-shadow: 0 0 14px rgba(255, 150, 70, 0.5), 0 2px 10px rgba(0, 0, 0, 0.95);
+}
+
+.ac-menu-item.selected {
+  letter-spacing: 0.4em;
+  text-indent: 0.4em;
+}
+
+.ac-menu-item:hover::before,
+.ac-menu-item:focus-visible::before,
+.ac-menu-item.selected::before,
+.ac-menu-item:hover::after,
+.ac-menu-item:focus-visible::after,
+.ac-menu-item.selected::after {
+  opacity: 1;
+}
+
+.title-screen-ranking {
+  gap: clamp(1rem, 2.6vh, 1.8rem);
+}
+
+.title-screen-ranking .title-logo {
+  width: min(760px, 82vw);
+  margin-top: -1.4rem;
+}
+
+.title-screen-register {
+  gap: 0;
+  padding-top: clamp(0.6rem, 3vh, 2rem);
+}
+
+.register-screen {
+  width: min(720px, 92vw);
+  color: rgba(232, 240, 252, 0.92);
+  animation: titleMenuIn 420ms ease-out both;
+}
+
+.register-topbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  justify-items: center;
+  min-height: 2.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.register-title {
+  position: relative;
+  margin: 0;
+  padding: 0.4rem 3.6rem 0.62rem;
+  color: #fff2df;
+  font-size: clamp(1.6rem, 4.2vw, 3rem);
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  text-align: center;
+  text-indent: 0.28em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(255, 150, 70, 0.34), 0 2px 14px rgba(0, 0, 0, 0.95);
+}
+
+.register-title::before,
+.register-title::after {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  pointer-events: none;
+}
+
+.register-title::before {
+  top: 0;
+  background: linear-gradient(90deg, transparent, rgba(120, 232, 255, 0.78), transparent);
+}
+
+.register-title::after {
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 196, 120, 0.84), transparent);
+  filter: drop-shadow(0 0 5px rgba(255, 120, 60, 0.48));
+}
+
+.register-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(1rem, 3vh, 1.55rem) 1rem 1rem;
+  border-top: 1px solid rgba(120, 232, 255, 0.22);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.34));
+  box-shadow: inset 0 0 0 1px rgba(120, 232, 255, 0.12), 0 16px 42px rgba(0, 0, 0, 0.28);
+}
+
+.register-qr h3 {
+  margin: 0 0 0.9rem;
+  color: #fff2df;
+  font-size: clamp(1.2rem, 2.8vw, 1.9rem);
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  text-transform: uppercase;
+  text-align: center;
+  text-shadow: 0 0 18px rgba(255, 150, 70, 0.26), 0 2px 12px rgba(0, 0, 0, 0.95);
+}
+
+.qr-placeholder {
+  position: relative;
+  width: min(282px, 54vw);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin-inline: auto;
+  border: 1px solid rgba(120, 232, 255, 0.45);
+  background: transparent;
+  box-shadow: 0 0 0 1px rgba(120, 232, 255, 0.4), 0 0 30px rgba(120, 232, 255, 0.16);
+}
+
+.qr-placeholder canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  background: #f8fbff;
+}
+
+.qr-placeholder span {
+  position: absolute;
+  width: 24%;
+  aspect-ratio: 1;
+  border: 8px solid rgba(5, 9, 16, 0.98);
+  background: rgba(238, 244, 255, 0.95);
+}
+
+.qr-placeholder span:nth-child(1) {
+  left: 8%;
+  top: 8%;
+}
+
+.qr-placeholder span:nth-child(2) {
+  right: 8%;
+  top: 8%;
+}
+
+.qr-placeholder span:nth-child(3) {
+  left: 8%;
+  bottom: 8%;
+}
+
+.register-qr p {
+  margin: 0.75rem 0 0;
+  color: rgba(232, 240, 252, 0.7);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.register-qr-url {
+  max-width: min(460px, 90vw);
+  overflow-wrap: anywhere;
+}
+
+.register-remote-status {
+  min-height: 1.2em;
+  font-weight: 800;
+}
+
+.register-remote-status[data-status="registered"] {
+  color: rgba(148, 255, 198, 0.92);
+}
+
+.register-remote-status[data-status="error"] {
+  color: rgba(255, 130, 130, 0.92);
+}
+
+.register-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.95rem 1rem 1rem;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 -1px 0 rgba(255, 196, 120, 0.2), inset 0 0 0 1px rgba(120, 232, 255, 0.1);
+}
+
+.register-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: min(460px, 100%);
+  margin-bottom: 0.75rem;
+  color: rgba(255, 212, 121, 0.74);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.register-divider::before,
+.register-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 212, 121, 0.22);
+}
+
+.register-field {
+  display: block;
+  width: min(460px, 100%);
+}
+
+.register-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(120, 232, 255, 0.32);
+  border-radius: 6px;
+  background: rgba(5, 9, 16, 0.74);
+  color: #fff2df;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.register-field input:focus {
+  outline: none;
+  border-color: rgba(255, 196, 120, 0.85);
+  box-shadow: 0 0 0 2px rgba(255, 196, 120, 0.14);
+}
+
+.register-field input.is-invalid {
+  border-color: rgba(255, 100, 100, 0.86);
+  box-shadow: 0 0 0 2px rgba(255, 80, 80, 0.16);
+}
+
+.register-suggestions-host {
+  width: min(460px, 100%);
+}
+
+.register-suggestions {
+  width: 100%;
+  margin-top: 0.35rem;
+  border: 1px solid rgba(120, 232, 255, 0.24);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(5, 9, 16, 0.9);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36), inset 0 0 0 1px rgba(255, 196, 120, 0.08);
+}
+
+.register-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.48rem 0.72rem;
+  border: 0;
+  border-bottom: 1px solid rgba(180, 210, 240, 0.12);
+  background: transparent;
+  color: rgba(238, 244, 255, 0.92);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.register-suggestion:last-child {
+  border-bottom: 0;
+}
+
+.register-suggestion:hover,
+.register-suggestion:focus-visible {
+  outline: none;
+  background: rgba(120, 232, 255, 0.12);
+  color: #fff2df;
+}
+
+.register-suggestion span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.register-suggestion small {
+  color: #ffd479;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.register-suggestion span .player-id {
+  color: rgba(120, 232, 255, 0.86);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+}
+
+.register-hint,
+.register-error {
+  width: min(460px, 100%);
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.register-hint {
+  color: rgba(232, 240, 252, 0.58);
+}
+
+.register-error {
+  color: #ff9d9d;
+  font-weight: 800;
+}
+
+.register-submit {
+  width: min(460px, 100%);
+  margin-top: 0.85rem;
+  justify-content: center;
+}
+
+/* 同名登録の確認カード（「これはあなたですか？」）。 */
+.register-duplicate {
+  width: min(460px, 100%);
+  margin-top: 0.9rem;
+  padding: 1rem 1.1rem 1.15rem;
+  border: 1px solid rgba(120, 232, 255, 0.4);
+  border-radius: 0.7rem;
+  background: rgba(10, 22, 40, 0.72);
+  text-align: center;
+  animation: titleMenuIn 320ms ease-out both;
+}
+
+.register-duplicate-title {
+  margin: 0;
+  font-weight: 800;
+  color: #ffe08a;
+  letter-spacing: 0.03em;
+}
+
+.register-duplicate-detail {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(232, 240, 252, 0.66);
+}
+
+.register-duplicate-ask {
+  margin: 0.7rem 0 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(232, 240, 252, 0.92);
+}
+
+.register-duplicate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.register-duplicate-actions .ic-proceed-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.register-duplicate-reject {
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(232, 240, 252, 0.28);
+  border-radius: 0.55rem;
+  background: transparent;
+  color: rgba(232, 240, 252, 0.82);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.register-duplicate-reject:hover {
+  background: rgba(232, 240, 252, 0.08);
+  border-color: rgba(232, 240, 252, 0.5);
+}
+
+.ranking-board {
+  width: min(960px, 92vw);
+  color: rgba(232, 240, 252, 0.92);
+  animation: titleMenuIn 420ms ease-out both;
+}
+
+.ranking-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(120, 232, 255, 0.24);
+}
+
+.ranking-board h2 {
+  margin: 0 0 0.7rem;
+  color: #fff2df;
+  font-size: clamp(1.4rem, 2.8vw, 2.2rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(255, 150, 70, 0.26), 0 2px 12px rgba(0, 0, 0, 0.95);
+}
+
+.ranking-back {
+  min-width: 7rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid rgba(120, 232, 255, 0.42);
+  background: rgba(5, 9, 16, 0.72);
+  color: rgba(232, 240, 252, 0.9);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+
+.ranking-back:hover,
+.ranking-back:focus-visible {
+  outline: none;
+  border-color: rgba(255, 196, 120, 0.85);
+  color: #fff2df;
+}
+
+.ranking-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(0, 0, 0, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(120, 232, 255, 0.15), 0 16px 42px rgba(0, 0, 0, 0.34);
+}
+
+.ranking-table th,
+.ranking-table td {
+  padding: 0.72rem 0.8rem;
+  border-bottom: 1px solid rgba(180, 210, 240, 0.13);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ranking-table th {
+  color: rgba(120, 232, 255, 0.78);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ranking-table td {
+  color: rgba(238, 244, 255, 0.9);
+  font-size: clamp(0.82rem, 1.5vw, 1rem);
+  font-weight: 650;
+}
+
+.ranking-table td:nth-child(1),
+.ranking-table td:nth-child(2),
+.ranking-table td:nth-child(4) {
+  color: #ffd479;
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking-empty {
+  height: 5.2rem;
+  color: rgba(232, 240, 252, 0.56) !important;
+  text-align: center !important;
+  letter-spacing: 0.08em;
+}
+
+.ranking-actions-cell {
+  width: 2.6rem;
+  text-align: center;
+}
+
+.ranking-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid rgba(255, 120, 120, 0.4);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: rgba(255, 150, 150, 0.85);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.ranking-delete:hover,
+.ranking-delete:focus-visible {
+  background: rgba(255, 90, 90, 0.18);
+  border-color: rgba(255, 120, 120, 0.85);
+  color: #ffd7d7;
+  outline: none;
+}
+
+.ranking-note {
+  margin: 0.8rem 0 0;
+  color: rgba(232, 240, 252, 0.56);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.result-highscore-label {
+  width: fit-content;
+  margin: 0.2rem auto 0;
+  padding: 0.12rem 0.85rem;
+  border: 1px solid rgba(255, 212, 121, 0.5);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #ffe08a;
+  font-size: clamp(0.95rem, 1.8vw, 1.35rem);
+  font-weight: 950;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 0 rgba(92, 42, 0, 0.6),
+    0 0 14px rgba(255, 172, 62, 0.7),
+    0 2px 10px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 0 16px rgba(255, 212, 121, 0.1),
+    0 0 18px rgba(255, 172, 62, 0.18);
+  opacity: 0;
+  animation: resultDetailIn 300ms ease-out 1160ms both;
+}
+
+.result-actions {
+  margin: 1.35rem auto 0;
+}
+
+.result-ranking-summary {
+  width: min(620px, 88vw);
+  margin: 1rem auto 0;
+  padding: 0.72rem 1rem 0.82rem;
+  border: 1px solid rgba(190, 202, 230, 0.24);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.34);
+  text-align: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.26);
+  opacity: 0;
+  animation: resultDetailIn 360ms ease-out 1880ms both;
+}
+
+.result-ranking-summary h3 {
+  margin: 0 0 0.52rem;
+  color: #d9deee;
+  font-size: 0.95rem;
+  letter-spacing: 0.14em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
+.result-ranking-change {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.75rem, 3vw, 1.5rem);
+}
+
+.result-ranking-node {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 7rem;
+}
+
+.result-ranking-node span,
+.result-ranking-best span,
+.result-ranking-summary-message {
+  color: rgba(232, 240, 252, 0.68);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.result-ranking-node strong,
+.result-ranking-best strong {
+  color: #ffd479;
+  font-size: clamp(1.25rem, 2.8vw, 2.1rem);
+  font-weight: 950;
+  line-height: 1;
+  text-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.95),
+    0 0 18px rgba(255, 160, 64, 0.48);
+}
+
+.result-ranking-node strong.rank-S,
+.result-ranking-best strong.rank-S { color: #ffd479; }
+.result-ranking-node strong.rank-A,
+.result-ranking-best strong.rank-A { color: #ff9d6a; }
+.result-ranking-node strong.rank-B,
+.result-ranking-best strong.rank-B { color: #6ad4ff; }
+.result-ranking-node strong.rank-C,
+.result-ranking-best strong.rank-C { color: #9aa0b5; }
+.result-ranking-node strong.rank-D,
+.result-ranking-best strong.rank-D { color: #6b7088; }
+.result-ranking-node strong.rank-E,
+.result-ranking-best strong.rank-E { color: #565b70; }
+
+.result-ranking-node strong.rank-top-1,
+.result-ranking-node strong.rank-top-2,
+.result-ranking-node strong.rank-top-3,
+.result-ranking-best strong.rank-top-1,
+.result-ranking-best strong.rank-top-2,
+.result-ranking-best strong.rank-top-3 {
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-stroke: 0.035em rgba(255, 255, 255, 0.18);
+  paint-order: stroke fill;
+}
+
+.result-ranking-node strong.rank-top-1,
+.result-ranking-best strong.rank-top-1 {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.34) 14%, transparent 30%),
+    linear-gradient(180deg, #fffef0 0%, #fff083 34%, #ffd23f 68%, #fff8c8 100%);
+  text-shadow:
+    0 1px 0 rgba(130, 76, 0, 0.48),
+    0 2px 7px rgba(0, 0, 0, 0.82),
+    0 0 26px rgba(255, 238, 118, 1),
+    0 0 52px rgba(255, 204, 54, 0.72);
+}
+
+.result-ranking-node strong.rank-top-2,
+.result-ranking-best strong.rank-top-2 {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.52) 16%, transparent 32%),
+    linear-gradient(180deg, #ffffff 0%, #f7fcff 34%, #dce9f6 70%, #ffffff 100%);
+  text-shadow:
+    0 1px 0 rgba(70, 82, 96, 0.42),
+    0 2px 7px rgba(0, 0, 0, 0.82),
+    0 0 26px rgba(250, 253, 255, 1),
+    0 0 48px rgba(202, 232, 255, 0.68);
+}
+
+.result-ranking-node strong.rank-top-3,
+.result-ranking-best strong.rank-top-3 {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.62) 12%, transparent 28%),
+    linear-gradient(180deg, #fff4e6 0%, #ffc078 30%, #f08a48 66%, #ffd8b7 100%);
+  text-shadow:
+    0 1px 0 rgba(92, 34, 8, 0.62),
+    0 2px 8px rgba(0, 0, 0, 0.96),
+    0 0 24px rgba(255, 180, 106, 0.9),
+    0 0 42px rgba(255, 118, 62, 0.56);
+}
+
+.result-ranking-previous strong:not(.rank-S):not(.rank-A):not(.rank-B):not(.rank-C):not(.rank-D):not(.rank-E) {
+  color: rgba(255, 212, 121, 0.7);
+}
+
+.result-ranking-current em {
+  color: #8dff9d;
+  font-style: normal;
+  text-shadow:
+    0 0 12px rgba(90, 255, 112, 0.74),
+    0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.result-ranking-arrow {
+  color: rgba(232, 240, 252, 0.64);
+  font-size: clamp(1.25rem, 2.8vw, 2rem);
+  font-weight: 900;
+}
+
+.result-ranking-best {
+  display: grid;
+  gap: 0.38rem;
+  justify-items: center;
+}
+
+.result-ranking-best-row {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: end;
+  justify-content: center;
+  column-gap: 1rem;
+  row-gap: 0.18rem;
+}
+
+.result-ranking-best-row span {
+  align-self: center;
+  min-width: 9.2rem;
+  text-align: right;
+}
+
+.result-ranking-best-row strong {
+  min-width: 10.5rem;
+  text-align: left;
+}
+
+.result-ranking-best strong.result-ranking-position {
+  font-size: clamp(1.65rem, 3.4vw, 2.7rem);
+}
+
+.result-ranking-summary-message {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .register-topbar {
+    padding-top: 0;
+  }
+
+  .register-title {
+    padding-inline: 0.5rem;
+    letter-spacing: 0.16em;
+    text-indent: 0.16em;
+  }
+
+  .qr-placeholder {
+    width: min(220px, 62vw);
+  }
+
+  .ranking-table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .ranking-table th,
+  .ranking-table td {
+    padding: 0.62rem 0.68rem;
+  }
+
+  .result-highscore-label {
+    max-width: 92vw;
+    white-space: normal;
+  }
+
+  .result-ranking-change {
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .result-ranking-arrow {
+    transform: rotate(90deg);
+  }
+
+  .result-ranking-best-row {
+    align-items: center;
+    flex-direction: column;
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .result-ranking-best-row span,
+  .result-ranking-best-row strong {
+    min-width: 0;
+    text-align: center;
+  }
+}
+
+/* Titleの安全注意は、主画面の視認性を保つため控えめに表示する。 */
+.screen-Title .safety {
+  margin: 0;
+  max-width: 520px;
+  border-color: rgba(255, 212, 121, 0.24);
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 212, 121, 0.82);
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+/* 右下の極小コマンドヒント（入力設定は S キー起動）。 */
+.title-command-hint {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.15rem;
+  z-index: 4;
+  color: rgba(200, 210, 228, 0.5);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.title-command-hint b {
+  color: rgba(232, 240, 252, 0.85);
+  font-weight: 800;
+}
+
+/* 入力設定オーバーレイ（S キーで開閉）。 */
+.title-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 5, 9, 0.72);
+  backdrop-filter: blur(3px);
+  animation: titleOverlayIn 180ms ease-out both;
+}
+
+@keyframes titleOverlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.title-settings-card {
+  width: min(460px, 88vw);
+  padding: 1.4rem 1.6rem 1.2rem;
+  border: 1px solid rgba(150, 170, 210, 0.28);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(20, 24, 36, 0.96), rgba(12, 14, 22, 0.96));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  text-align: center;
+}
+
+.title-settings-title {
+  color: #e8edf8;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.title-settings-title span {
+  display: block;
+  margin-top: 0.15rem;
+  color: #8089a3;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+/* ===== InputCheck 画面（mocopi 接続ヒーロー表示） ===== */
+/* 本番レイアウト(.inputcheck-screen)のときだけ中央寄せ＆シネマティックに暗く（debug は従来どおり）。 */
+.screen-InputCheck:has(.inputcheck-screen) {
+  justify-content: center;
+  padding-top: 2rem;
+}
+
+.screen-InputCheck:has(.inputcheck-screen)::after {
+  background:
+    radial-gradient(ellipse 80% 64% at 50% 44%, rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0) 72%),
+    linear-gradient(180deg, rgba(3, 4, 8, 0.64) 0%, rgba(3, 4, 8, 0.74) 46%, rgba(3, 4, 8, 0.88) 100%);
+}
+
+.inputcheck-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(1.6rem, 5vh, 3rem);
+  width: 100%;
+}
+
+.ic-status-host {
+  width: min(760px, 92vw);
+}
+
+.ic-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+  animation: icStatusIn 460ms ease-out both;
+}
+
+@keyframes icStatusIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ic-status-ring {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(120, 232, 255, 0.5);
+}
+
+.ic-status-glyph {
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* searching: シアンの脈動リング（2重・遅延）。 */
+.ic-status-searching .ic-status-ring {
+  border-color: rgba(120, 232, 255, 0.62);
+  box-shadow: 0 0 22px rgba(74, 216, 255, 0.24);
+}
+
+.ic-status-searching .ic-status-ring::before,
+.ic-status-searching .ic-status-ring::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid rgba(94, 221, 255, 0.7);
+  animation: icPulse 1.7s ease-out infinite;
+}
+
+.ic-status-searching .ic-status-ring::after {
+  animation-delay: 0.85s;
+}
+
+@keyframes icPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.95);
+    opacity: 0;
+  }
+}
+
+/* ready: 緑グロー＋チェック。 */
+.ic-status-ready .ic-status-ring {
+  border-color: rgba(94, 220, 140, 0.9);
+  box-shadow: 0 0 30px rgba(74, 216, 140, 0.42), inset 0 0 18px rgba(74, 216, 140, 0.2);
+}
+
+.ic-status-ready .ic-status-glyph {
+  color: #7ef0a8;
+  text-shadow: 0 0 16px rgba(74, 216, 140, 0.7);
+}
+
+/* error: 赤。 */
+.ic-status-error .ic-status-ring {
+  border-color: rgba(255, 92, 80, 0.85);
+  box-shadow: 0 0 24px rgba(255, 72, 60, 0.35);
+}
+
+.ic-status-error .ic-status-glyph {
+  color: #ff8a7a;
+  text-shadow: 0 0 14px rgba(255, 72, 60, 0.7);
+}
+
+.ic-status-en {
+  font-size: clamp(2.4rem, 6.2vw, 4.6rem);
+  font-weight: 950;
+  letter-spacing: 0.1em;
+  /* 末尾字間ぶんを負マージンで詰めて真の中央に。text-indent と違い全行に効くので
+     折り返しタイトル（例 "KEYBOARD MODE"）でも各行が中央で揃う。 */
+  margin-inline-end: -0.1em;
+  line-height: 1.04;
+  text-transform: uppercase;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.92);
+}
+
+.ic-status-searching .ic-status-en {
+  color: #c4ecff;
+  text-shadow: 0 0 22px rgba(74, 216, 255, 0.45), 0 2px 16px rgba(0, 0, 0, 0.92);
+}
+
+/* ready: リング/チェックの緑と見出しを揃えて「成功」を一貫させる。 */
+.ic-status-ready .ic-status-en {
+  color: #c9f7d8;
+  text-shadow: 0 0 22px rgba(74, 216, 140, 0.5), 0 2px 16px rgba(0, 0, 0, 0.92);
+}
+
+.ic-status-error .ic-status-en {
+  color: #ff9e8e;
+  text-shadow: 0 0 20px rgba(255, 72, 60, 0.5), 0 2px 16px rgba(0, 0, 0, 0.92);
+}
+
+.ic-status-ja {
+  font-size: clamp(1rem, 2.6vw, 1.45rem);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  margin-inline-end: -0.2em; /* 末尾字間ぶんを負マージンで詰めて真の中央に（全行に効く） */
+  color: rgba(224, 232, 246, 0.82);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+}
+
+.ic-status-sub {
+  margin: 0.25rem 0 0;
+  max-width: 42ch;
+  color: rgba(200, 210, 228, 0.66);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  text-wrap: balance;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+/* 接続完了で現れる「進む」CTA（発勁エネルギー配色・脈動）。 */
+.inputcheck-proceed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.inputcheck-proceed.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.ic-proceed-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.85rem 3.4rem;
+  border: 0;
+  border-top: 1px solid rgba(120, 232, 255, 0.72);
+  border-bottom: 1px solid rgba(255, 140, 80, 0.72);
+  border-radius: 0;
+  background: linear-gradient(180deg, rgba(255, 214, 140, 0.24), rgba(255, 120, 50, 0.16));
+  color: #fff2df;
+  cursor: pointer;
+  clip-path: polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%);
+  box-shadow: 0 0 26px rgba(255, 150, 70, 0.2), inset 0 0 22px rgba(94, 221, 255, 0.08);
+  backdrop-filter: brightness(0.72);
+  animation: icProceedPulse 1.9s ease-in-out infinite;
+}
+
+.ic-proceed-btn:hover {
+  background: linear-gradient(180deg, rgba(255, 224, 160, 0.26), rgba(255, 130, 60, 0.16));
+  filter: brightness(1.08);
+}
+
+.ic-proceed-btn span {
+  font-size: 1.4rem;
+  font-weight: 950;
+  letter-spacing: 0.3em;
+  margin-inline-end: -0.3em; /* text-indent を廃し末尾字間補正へ（折返しラベルでも中央維持） */
+  text-shadow: 0 0 14px rgba(255, 150, 70, 0.55), 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.ic-proceed-btn small {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(255, 236, 206, 0.86);
+}
+
+.inputcheck-phone-ready {
+  margin: 0.7rem 0 0;
+  color: rgba(200, 210, 228, 0.58);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.88);
+}
+
+@keyframes icProceedPulse {
+  0%, 100% {
+    box-shadow: 0 0 22px rgba(255, 150, 70, 0.18), inset 0 0 20px rgba(94, 221, 255, 0.06);
+  }
+  50% {
+    box-shadow: 0 0 36px rgba(255, 150, 70, 0.34), inset 0 0 24px rgba(94, 221, 255, 0.12);
+  }
+}
+
+/* 右下の極小コマンド（Title の command-hint と同じ質感）。 */
+.inputcheck-hint {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.15rem;
+  z-index: 4;
+  display: flex;
+  gap: 1.2rem;
+  align-items: center;
+}
+
+.ic-cmd {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(200, 210, 228, 0.5);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.ic-cmd:hover {
+  background: transparent;
+  color: rgba(236, 242, 252, 0.9);
+}
+
+.ic-cmd b {
+  color: rgba(232, 240, 252, 0.85);
+  font-weight: 800;
+}
+
+.game-prompt {
+  position: relative;
+  width: min(680px, 86vw);
+  margin: 0 auto 0.75rem;
+  padding: 1.15rem 2rem 1.2rem;
+  color: #f8fbff;
+  background:
+    linear-gradient(90deg, rgba(15, 25, 33, 0), rgba(12, 22, 30, 0.92) 14%, rgba(12, 22, 30, 0.92) 86%, rgba(15, 25, 33, 0)),
+    linear-gradient(180deg, rgba(64, 218, 255, 0.16), rgba(0, 0, 0, 0.35));
+  border-top: 1px solid rgba(131, 229, 255, 0.72);
+  border-bottom: 1px solid rgba(255, 157, 106, 0.46);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(255, 157, 106, 0.24);
+  clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95);
+}
+
+.screen-Ready .game-prompt,
+.screen-Charge .game-prompt,
+.screen-HakkeiReady .game-prompt {
+  position: fixed;
+  top: clamp(4.5rem, 12vh, 6.5rem);
+  left: 50%;
+  z-index: 2;
+  margin: 0;
+  transform: translateX(-50%);
+  animation: hudFadeIn 180ms ease-out both;
+}
+
+@keyframes hudFadeIn {
+  from {
+    opacity: 0;
+    filter: brightness(1.18);
+    transform: translate(-50%, 14px);
+  }
+
+  to {
+    opacity: 1;
+    filter: brightness(1);
+    transform: translate(-50%, 0);
+  }
+}
+
+.game-prompt::before,
+.game-prompt::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(94, 221, 255, 0.95), transparent);
+  filter: drop-shadow(0 0 8px rgba(94, 221, 255, 0.8));
+}
+
+.game-prompt::before {
+  top: 0;
+}
+
+.game-prompt::after {
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 157, 106, 0.85), transparent);
+  filter: drop-shadow(0 0 8px rgba(255, 123, 68, 0.72));
+}
+
+.game-prompt-timer {
+  display: inline-block;
+  min-width: 5.25rem;
+  margin-top: 0.45rem;
+  padding: 0.08rem 0.55rem;
+  color: #0df2ff;
+  background: rgba(0, 14, 20, 0.5);
+  border: 1px solid rgba(91, 224, 255, 0.42);
+  font-size: 1.05rem;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+  box-shadow: inset 0 0 12px rgba(25, 196, 255, 0.18);
+}
+
+.game-prompt-command {
+  display: inline-block;
+  padding: 0.28rem 1.15rem;
+  min-width: min(440px, 76vw);
+  color: #ffd28f;
+  background: linear-gradient(90deg, rgba(255, 126, 62, 0), rgba(255, 126, 62, 0.22), rgba(255, 126, 62, 0));
+  border-top: 1px solid rgba(255, 184, 112, 0.44);
+  border-bottom: 1px solid rgba(255, 107, 54, 0.34);
+  font-size: 1.28rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 12px rgba(255, 88, 35, 0.74), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.game-prompt-ready .game-prompt-command {
+  color: #dbf8ff;
+  background: linear-gradient(90deg, rgba(68, 218, 255, 0), rgba(68, 218, 255, 0.18), rgba(68, 218, 255, 0));
+  border-color: rgba(118, 232, 255, 0.42);
+  text-shadow: 0 0 12px rgba(74, 216, 255, 0.74), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.game-prompt-hakkei .game-prompt-command {
+  color: #fff0bf;
+  background: linear-gradient(90deg, rgba(255, 54, 41, 0), rgba(255, 54, 41, 0.28), rgba(255, 54, 41, 0));
+  border-color: rgba(255, 190, 94, 0.54);
+  text-shadow: 0 0 16px rgba(255, 72, 45, 0.86), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.impact {
+  font-size: 5rem;
+  letter-spacing: 0.4em;
+  color: #ffffff;
+  animation: flash 0.6s ease-out;
+}
+
+@keyframes flash {
+  from {
+    opacity: 1;
+    text-shadow: 0 0 40px #fff;
+  }
+  to {
+    opacity: 0.3;
+  }
+}
+
+.video-stub {
+  width: 480px;
+  max-width: 80vw;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 1rem auto;
+  border: 1px dashed #3a3f55;
+  border-radius: 8px;
+  background: #05050a;
+  color: #6b7088;
+}
+
+.result-focus {
+  width: min(1840px, 96vw);
+  margin: 0.35rem 0 1rem;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  transform-origin: center 42%;
+}
+
+/* 「TOTAL DAMAGE」ラベルを派手に：金色＋発光＋左右のグラデ罫線。 */
+.result-focus-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85em;
+  color: #ffe08a;
+  font-size: clamp(1.05rem, 1.7vw, 1.55rem);
+  font-weight: 900;
+  letter-spacing: 0.36em;
+  text-indent: 0.36em;
+  text-shadow:
+    0 1px 0 rgba(92, 42, 0, 0.6),
+    0 0 14px rgba(255, 172, 62, 0.75),
+    0 2px 12px rgba(0, 0, 0, 0.92);
+  animation: resultLabelIn 620ms ease-out 120ms both;
+}
+
+.result-focus-label::before,
+.result-focus-label::after {
+  content: "";
+  flex: 0 0 auto;
+  height: 2px;
+  width: clamp(40px, 12vw, 140px);
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(255, 176, 66, 0.55);
+}
+
+.result-focus-label::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 196, 92, 0.95));
+}
+
+.result-focus-label::after {
+  background: linear-gradient(90deg, rgba(255, 196, 92, 0.95), transparent);
+}
+
+@keyframes resultLabelIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+    letter-spacing: 0.6em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.36em;
+  }
+}
+
+.result-focus-damage-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: 0.15rem auto 0;
+}
+
+.result-focus-damage {
+  display: block;
+  width: max-content;
+  max-width: 96vw;
+  margin-top: 0.15rem;
+  color: #ffd479;
+  font-size: clamp(2.25rem, 5.1vw, 5.7rem);
+  font-weight: 950;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.95),
+    0 0 22px rgba(255, 160, 64, 0.72);
+}
+
+.result-focus-damage-long {
+  font-size: clamp(2rem, 4.35vw, 4.8rem);
+}
+
+.result-focus-rank {
+  display: inline-block;
+  opacity: 0;
+  margin-top: 0.65rem;
+  padding: 0.18rem 1.1rem;
+  border: 1px solid rgba(255, 212, 121, 0.58);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.34);
+  font-size: clamp(1.75rem, 4.3vw, 3rem);
+  font-weight: 950;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 0 16px rgba(255, 212, 121, 0.12),
+    0 0 24px rgba(0, 0, 0, 0.34);
+  transform-origin: center;
+  animation: resultFocusIn 760ms cubic-bezier(0.16, 0.88, 0.22, 1) 1180ms both;
+}
+
+.result-detail {
+  opacity: 0;
+  animation: resultDetailIn 320ms ease-out 1960ms both;
+}
+
+.damage-report {
+  width: min(620px, 88vw);
+  margin: 1rem auto 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(190, 202, 230, 0.26);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.38);
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  animation: resultDetailIn 360ms ease-out 1760ms both;
+}
+
+.damage-report h3 {
+  margin: 0 0 0.45rem;
+  color: #d9deee;
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
+.damage-report ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.damage-report li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.32rem 0;
+  border-top: 1px solid rgba(190, 202, 230, 0.16);
+  color: #edf1fa;
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.damage-report li:first-child {
+  border-top: 0;
+}
+
+.damage-report .est-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.damage-report .est-qty {
+  flex: 0 0 auto;
+  color: #aeb7cc;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.damage-report .est-yen {
+  flex: 0 0 auto;
+  min-width: 6.5em;
+  text-align: right;
+  color: #ffd479;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 末尾の調整行（清掃/原状回復）は控えめに。 */
+.damage-report .est-reconcile {
+  color: #c7cede;
+}
+
+.damage-report .est-reconcile .est-yen {
+  color: #e6c98a;
+}
+
+@keyframes resultFocusIn {
+  0% {
+    opacity: 0;
+    transform: scale(1.78);
+    filter: blur(18px);
+  }
+
+  44% {
+    opacity: 1;
+    transform: scale(1.18);
+    filter: blur(5px);
+  }
+
+  76% {
+    transform: scale(1.025);
+    filter: blur(1px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes resultDetailIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.result {
+  margin: 1rem auto;
+  border-collapse: collapse;
+}
+
+.result th,
+.result td {
+  border: 1px solid #2a2e42;
+  padding: 0.5rem 1rem;
+  text-align: left;
+}
+
+.result .damage {
+  color: #ffd479;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.error-title {
+  color: #ff6b6b;
+}
+
+.error-msg {
+  color: #ffb0b0;
+}
+
+.diag {
+  margin: 1rem auto;
+  padding: 0.6rem 0.8rem;
+  max-width: 560px;
+  border: 1px solid #2a2e42;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.58);
+  font-size: 0.82rem;
+  color: #aeb4cf;
+  backdrop-filter: blur(1px);
+}
+
+.diag-keys {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.diag-keys .key {
+  padding: 0.15rem 0.5rem;
+  border-radius: 5px;
+  border: 1px solid #3a3f55;
+  color: #6b7088;
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-keys .key.on {
+  border-color: #6ad4ff;
+  color: #0b0b10;
+  background: #6ad4ff;
+  font-weight: 700;
+}
+
+.diag-sample {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-table {
+  margin: 0 auto;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-table th,
+.status-table td {
+  border: 1px solid #2a2e42;
+  padding: 0.3rem 0.8rem;
+  text-align: left;
+}
+
+.status-table th {
+  color: #8089a3;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.okng {
+  font-weight: 800;
+  padding: 0 0.4rem;
+  border-radius: 4px;
+}
+
+.okng.ok {
+  color: #0b0b10;
+  background: #5ad48a;
+}
+
+.okng.ng {
+  color: #fff;
+  background: #d4555a;
+}
+
+/* 方向判定テスト（dev）: 直近の判定 trigger を大きく色分け表示。 */
+.probe-last {
+  font-size: 1.8rem;
+  text-align: center;
+  padding: 0.4rem;
+  border-radius: 6px;
+  background: #1b1b24;
+  color: #cfd2e0;
+}
+.probe-last.probe-forward { background: #2e7d46; color: #fff; }
+.probe-last.probe-down { background: #2d5a9e; color: #fff; }
+.probe-last.probe-up { background: #9e7b2d; color: #fff; }
+.probe-last.probe-back { background: #7a3da0; color: #fff; }
+.probe-last.probe-hiddenMiss,
+.probe-last.probe-noImpact { background: #3a3a44; color: #aab; }
+
+.diag-hint {
+  margin: 0.6rem auto 0;
+  max-width: 520px;
+  font-size: 0.8rem;
+  color: #ffd479;
+  text-align: left;
+}
+
+.charge-hud {
+  width: min(820px, 92vw);
+  position: fixed;
+  left: 50%;
+  bottom: 1.2rem;
+  z-index: 2;
+  margin: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.hakkei-gauge {
+  position: relative;
+  width: 100%;
+  color: #e9f8ff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 12px rgba(74, 216, 255, 0.55);
+  --gauge-shake-x: 0px;
+  --gauge-shake-y: 0px;
+  --gauge-shake-duration: 140ms;
+}
+
+.hakkei-gauge.is-overcharge .hakkei-gauge-body {
+  animation: hakkeiGaugeShake var(--gauge-shake-duration) steps(2, end) infinite;
+  transform-origin: 50% 52%;
+  will-change: transform;
+}
+
+.hakkei-gauge.overcharge-tier-1 {
+  --gauge-shake-x: 1px;
+  --gauge-shake-y: 0.5px;
+  --gauge-shake-duration: 150ms;
+}
+
+.hakkei-gauge.overcharge-tier-2 {
+  --gauge-shake-x: 1.8px;
+  --gauge-shake-y: 0.9px;
+  --gauge-shake-duration: 130ms;
+}
+
+.hakkei-gauge.overcharge-tier-3 {
+  --gauge-shake-x: 2.8px;
+  --gauge-shake-y: 1.3px;
+  --gauge-shake-duration: 110ms;
+}
+
+.hakkei-gauge.overcharge-tier-4 {
+  --gauge-shake-x: 4px;
+  --gauge-shake-y: 1.8px;
+  --gauge-shake-duration: 92ms;
+}
+
+.hakkei-gauge.overcharge-tier-5 {
+  --gauge-shake-x: 5.4px;
+  --gauge-shake-y: 2.4px;
+  --gauge-shake-duration: 76ms;
+}
+
+@keyframes hakkeiGaugeShake {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  9% {
+    transform: translate3d(calc(var(--gauge-shake-x) * -0.45), calc(var(--gauge-shake-y) * 0.85), 0);
+  }
+
+  18% {
+    transform: translate3d(calc(var(--gauge-shake-x) * 0.75), calc(var(--gauge-shake-y) * -0.25), 0);
+  }
+
+  29% {
+    transform: translate3d(calc(var(--gauge-shake-x) * -0.95), calc(var(--gauge-shake-y) * -0.75), 0);
+  }
+
+  41% {
+    transform: translate3d(calc(var(--gauge-shake-x) * 0.25), var(--gauge-shake-y), 0);
+  }
+
+  53% {
+    transform: translate3d(var(--gauge-shake-x), calc(var(--gauge-shake-y) * 0.35), 0);
+  }
+
+  67% {
+    transform: translate3d(calc(var(--gauge-shake-x) * -0.2), calc(var(--gauge-shake-y) * -1), 0);
+  }
+
+  82% {
+    transform: translate3d(calc(var(--gauge-shake-x) * -0.75), calc(var(--gauge-shake-y) * 0.15), 0);
+  }
+
+  93% {
+    transform: translate3d(calc(var(--gauge-shake-x) * 0.45), calc(var(--gauge-shake-y) * -0.55), 0);
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.hakkei-gauge-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(680px, 76vw);
+  margin: 0 auto;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.hakkei-gauge-top {
+  margin-bottom: -0.2rem;
+  align-items: flex-end; /* 筆の下端(基準線)で揃える */
+  overflow: visible;
+}
+
+/* ===== 書道ラベル/カウンター（白ブラシPNGをmask、色墨で着色）=====
+   和の筆の勢い・かすれ・飛沫は素材(assets/images/hud/charge-word 等)が持つ。
+   発光はネオンにせず、墨だまり風の影で締める。着色は charge量連動の valueColor。 */
+.hakkei-gauge-wordmark {
+  --wm-h: 6rem;
+  height: var(--wm-h);
+  flex: 0 0 auto;
+  background: var(--charge-ink, #7ff4ff); /* 色墨/業火は #charge-hud の CSSOM 変数から継承 */
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.92)) drop-shadow(0 0 12px rgba(0, 0, 0, 0.55));
+}
+
+.wm-charge {
+  width: calc(var(--wm-h) * 1.953);
+  -webkit-mask-image: url("images/hud/charge-word.png");
+  mask-image: url("images/hud/charge-word.png");
+}
+
+/* OVERLOAD は Charge より一回り大きく、限界突破の印象を強くする（同位置で切替＝上書き演出）。 */
+.wm-overload {
+  --wm-h: 8.2rem;
+  width: calc(var(--wm-h) * 1.912);
+  -webkit-mask-image: url("images/hud/overload-word.png");
+  mask-image: url("images/hud/overload-word.png");
+}
+
+.hakkei-gauge-value {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.92)) drop-shadow(0 0 10px rgba(0, 0, 0, 0.5));
+}
+
+.hg-digit {
+  display: inline-block;
+  height: var(--dg-h, 3.7rem);
+  width: calc(var(--dg-h, 3.7rem) * var(--dg-r, 0.5847));
+  background: var(--charge-ink, #7ff4ff);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center bottom;
+  mask-position: center bottom;
+}
+
+.hg-digit-int {
+  --dg-h: 5.1rem;
+}
+
+.hg-digit-frac {
+  --dg-h: 3rem;
+}
+
+.g-0 { -webkit-mask-image: url("images/hud/dg-0.png"); mask-image: url("images/hud/dg-0.png"); }
+.g-1 { -webkit-mask-image: url("images/hud/dg-1.png"); mask-image: url("images/hud/dg-1.png"); }
+.g-2 { -webkit-mask-image: url("images/hud/dg-2.png"); mask-image: url("images/hud/dg-2.png"); }
+.g-3 { -webkit-mask-image: url("images/hud/dg-3.png"); mask-image: url("images/hud/dg-3.png"); }
+.g-4 { -webkit-mask-image: url("images/hud/dg-4.png"); mask-image: url("images/hud/dg-4.png"); }
+.g-5 { -webkit-mask-image: url("images/hud/dg-5.png"); mask-image: url("images/hud/dg-5.png"); }
+.g-6 { -webkit-mask-image: url("images/hud/dg-6.png"); mask-image: url("images/hud/dg-6.png"); }
+.g-7 { -webkit-mask-image: url("images/hud/dg-7.png"); mask-image: url("images/hud/dg-7.png"); }
+.g-8 { -webkit-mask-image: url("images/hud/dg-8.png"); mask-image: url("images/hud/dg-8.png"); }
+.g-9 { -webkit-mask-image: url("images/hud/dg-9.png"); mask-image: url("images/hud/dg-9.png"); }
+.g-dot { --dg-r: 0.2419; -webkit-mask-image: url("images/hud/dg-dot.png"); mask-image: url("images/hud/dg-dot.png"); }
+.g-pct { --dg-r: 0.6895; -webkit-mask-image: url("images/hud/dg-pct.png"); mask-image: url("images/hud/dg-pct.png"); }
+
+/* 地獄変の業火: オーバーチャージ時、筆エッジを乱流(feTurbulence)で舐めさせ、燠(おき)のグローを足す。 */
+.hakkei-gauge-wordmark.is-flame,
+.hakkei-gauge-value.is-flame {
+  filter: url(#hell-fringe) drop-shadow(0 2px 5px rgba(0, 0, 0, 0.92))
+    drop-shadow(0 0 14px rgba(255, 90, 25, 0.55));
+}
+
+.hakkei-gauge-label-svg {
+  width: 14rem;
+  height: 2.1rem;
+  overflow: visible;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.hakkei-gauge-label-text {
+  font: 950 25px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.72);
+  stroke-width: 1.35px;
+}
+
+.hakkei-gauge-value-svg {
+  width: 8.25rem;
+  height: 2.2rem;
+  overflow: visible;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.hakkei-gauge-value-text {
+  font: italic 900 30px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.74);
+  stroke-width: 1.45px;
+}
+
+/* 整数を主役に、小数と % を従属サイズへ（威力メーター感）。 */
+.hakkei-gauge-value-int {
+  font-size: 37px;
+}
+
+.hakkei-gauge-value-frac {
+  font-size: 20px;
+}
+
+.hakkei-gauge.is-ready .hakkei-gauge-value-text {
+  stroke-width: 1.65px;
+}
+
+.hakkei-gauge.is-overcharge .hakkei-gauge-value-text {
+  stroke-width: 1.85px;
+}
+
+/* オーバーチャージ段階で数字の縁をさらに強く（危険感）。 */
+.hakkei-gauge.overcharge-tier-3 .hakkei-gauge-value-text,
+.hakkei-gauge.overcharge-tier-4 .hakkei-gauge-value-text,
+.hakkei-gauge.overcharge-tier-5 .hakkei-gauge-value-text {
+  stroke-width: 2.1px;
+}
+
+.hakkei-gauge-body {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1554 / 305;
+}
+
+.hakkei-gauge-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hakkei-gauge-fill-wrap {
+  position: absolute;
+  z-index: 2;
+  left: 3.4%;
+  top: 14.3%;
+  width: 92.9%;
+  height: 70.8%;
+  overflow: hidden;
+  clip-path: polygon(1.4% 20%, 4.8% 0%, 95.2% 0%, 98.6% 20%, 98.6% 80%, 95.2% 100%, 4.8% 100%, 1.4% 80%);
+  background: rgba(2, 13, 18, 0.74);
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.75);
+}
+
+.hakkei-gauge-fill-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hakkei-gauge-fill-rect {
+  fill: url("#hakkei-gauge-gradient");
+  filter:
+    drop-shadow(0 0 7px rgba(65, 210, 255, 0.82))
+    drop-shadow(0 0 16px rgba(64, 118, 255, 0.4));
+  transition: width 90ms linear, fill 120ms linear, filter 120ms linear;
+}
+
+.hakkei-gauge.is-ready .hakkei-gauge-fill-rect {
+  filter:
+    drop-shadow(0 0 9px rgba(255, 212, 121, 0.9))
+    drop-shadow(0 0 22px rgba(255, 126, 62, 0.6));
+}
+
+.hakkei-gauge.is-overcharge .hakkei-gauge-fill-rect {
+  filter:
+    drop-shadow(0 0 12px rgba(255, 139, 45, 0.95))
+    drop-shadow(0 0 26px rgba(255, 47, 38, 0.72));
+}
+
+.hakkei-gauge.overcharge-tier-3 .hakkei-gauge-fill-rect,
+.hakkei-gauge.overcharge-tier-4 .hakkei-gauge-fill-rect,
+.hakkei-gauge.overcharge-tier-5 .hakkei-gauge-fill-rect {
+  filter:
+    drop-shadow(0 0 14px rgba(255, 59, 45, 0.98))
+    drop-shadow(0 0 32px rgba(255, 0, 0, 0.82));
+}
+
+.hakkei-gauge-overcharge {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  background: linear-gradient(90deg, rgba(255, 94, 42, 0.26), rgba(255, 0, 0, 0.9));
+  mix-blend-mode: normal;
+  pointer-events: none;
+}
+
+.hakkei-gauge.is-overcharge .hakkei-gauge-overcharge {
+  opacity: 0.18;
+}
+
+.hakkei-gauge.overcharge-tier-2 .hakkei-gauge-overcharge {
+  opacity: 0.28;
+}
+
+.hakkei-gauge.overcharge-tier-3 .hakkei-gauge-overcharge {
+  opacity: 0.38;
+}
+
+.hakkei-gauge.overcharge-tier-4 .hakkei-gauge-overcharge {
+  opacity: 0.48;
+}
+
+.hakkei-gauge.overcharge-tier-5 .hakkei-gauge-overcharge {
+  opacity: 0.58;
+}
+
+.hakkei-gauge-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), transparent 42%, rgba(255, 255, 255, 0.08));
+  pointer-events: none;
+}
+
+.hakkei-gauge-cracks {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.hakkei-gauge-crack-image {
+  position: absolute;
+  display: block;
+  inset: -20% -8%;
+  opacity: 0.86;
+  background-image: url("images/hud/hakkei-gauge-cracks.png");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  filter:
+    drop-shadow(0 0 5px rgba(230, 255, 255, 0.7))
+    drop-shadow(0 0 11px rgba(255, 45, 34, 0.35));
+  transform-origin: 50% 0;
+}
+
+.crack-image-1 { clip-path: polygon(42% 10%, 62% 10%, 64% 68%, 38% 70%); }
+.crack-image-2 { clip-path: polygon(9% 14%, 28% 14%, 31% 70%, 7% 72%); }
+.crack-image-3 { clip-path: polygon(71% 16%, 88% 14%, 91% 67%, 68% 69%); }
+.crack-image-4 { clip-path: polygon(26% 33%, 48% 30%, 52% 86%, 23% 90%); opacity: 0.68; }
+.crack-image-5 { clip-path: polygon(55% 30%, 76% 30%, 79% 90%, 52% 88%); opacity: 0.7; }
+.crack-image-6 { clip-path: polygon(0% 29%, 18% 24%, 22% 78%, 0% 86%); opacity: 0.62; }
+.crack-image-7 { clip-path: polygon(84% 28%, 100% 25%, 100% 78%, 82% 84%); opacity: 0.62; }
+.crack-image-8 { clip-path: polygon(18% 4%, 84% 4%, 88% 96%, 14% 96%); opacity: 0.34; }
+
+.hakkei-gauge-cracks.is-crack-impact .hakkei-gauge-crack-image:last-child {
+  animation: hakkei-crack-image-impact 260ms ease-out both;
+}
+
+@keyframes hakkei-crack-image-impact {
+  0% {
+    opacity: 0;
+    transform: scale(0.985);
+    filter:
+      brightness(2.6)
+      drop-shadow(0 0 7px rgba(230, 255, 255, 0.9))
+      drop-shadow(0 0 16px rgba(255, 45, 34, 0.55));
+  }
+  52% {
+    opacity: 1;
+    transform: scale(1.006);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 計測モード: セッション種別/ラベルのボタン群。 */
+.measure-presets {
+  margin: 0.4rem auto;
+  max-width: 640px;
+}
+.measure-cap {
+  display: block;
+  font-size: 0.75rem;
+  color: #8089a3;
+  margin-bottom: 0.15rem;
+}
+
+/* 構え（心の準備）カウントダウン（HakkeiReady の prep フェーズ）。 */
+.screen-HakkeiReady .diag {
+  width: min(520px, 78vw);
+  margin-top: 0.45rem;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.prompt-live {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.42rem;
+  min-width: 12rem;
+  padding: 0.34rem 1.15rem;
+  color: #ffd479;
+  background: linear-gradient(90deg, rgba(255, 212, 121, 0), rgba(255, 212, 121, 0.16), rgba(255, 212, 121, 0));
+  border-top: 1px solid rgba(255, 212, 121, 0.42);
+  border-bottom: 1px solid rgba(255, 126, 62, 0.32);
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-shadow: 0 0 14px rgba(255, 126, 62, 0.82), 0 2px 8px rgba(0, 0, 0, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+
+.prompt-live b {
+  min-width: 3rem;
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.prompt-live small {
+  color: #c8d6df;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.prompt-live-note {
+  margin: 0.36rem 0 0;
+  color: #bfd3dc;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* 実験ウィザード（ゲーム的キャリブレーション）。 */
+.measure-panel.wiz {
+  text-align: center;
+}
+.wiz-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #cfd2e0;
+  margin: 0.4rem 0;
+}
+.wiz-step {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #8fa0ff;
+  margin: 0.3rem 0;
+}
+.wiz-big {
+  font-size: 3.2rem;
+  font-weight: 900;
+  line-height: 1.1;
+  color: #5ad48a;
+  font-variant-numeric: tabular-nums;
+  transition: transform 0.08s ease;
+}
+.wiz-big small {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #8089a3;
+  margin-left: 0.3rem;
+}
+.wiz-big.ok {
+  color: #5ad48a;
+}
+.wiz-big.ng {
+  color: #d4555a;
+}
+.wiz-big.flash {
+  transform: scale(1.18);
+  color: #ffd479;
+}
+.wiz-bar {
+  height: 14px;
+  max-width: 360px;
+  margin: 0.4rem auto;
+  background: #14141c;
+  border: 1px solid #2a2e42;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.wiz-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3a7d5a, #5ad48a);
+  transition: width 0.1s linear;
+}
+
+/* 計測モード: 角速度の連続波形スパークライン。 */
+.spark-wrap {
+  margin: 0.6rem auto;
+  max-width: 340px;
+}
+.spark-label {
+  font-size: 0.75rem;
+  color: #8089a3;
+  margin-bottom: 0.2rem;
+}
+.spark {
+  display: block;
+  width: 320px;
+  height: 72px;
+  background: #14141c;
+  border: 1px solid #2a2e42;
+  border-radius: 4px;
+}
+.spark-line {
+  fill: none;
+  stroke: #5ad48a;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.spark-th {
+  stroke: #d4555a;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.flag {
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  background: #5a3a1e;
+  color: #ffb98a;
+  font-size: 0.75rem;
+}
+
+.flag.none {
+  background: #1d3a2a;
+  color: #5ad48a;
+}
+
+.video-host {
+  margin: 1rem auto;
+}
+
+.video-background-host {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+.video-background-host.video-background-still {
+  background: url("images/lab-backgrounds/lab-main-front-16x9-privacy.png") center / cover no-repeat;
+}
+
+.video-el {
+  width: 640px;
+  max-width: 85vw;
+  border-radius: 8px;
+  background: #000;
+}
+
+.video-el.video-loading {
+  opacity: 0;
+}
+
+.video-el.video-ready {
+  opacity: 1;
+  transition: opacity 80ms linear;
+}
+
+.video-background-host .video-el {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.result-background-host {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: transparent;
+}
+
+.result-background-host::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  pointer-events: none;
+}
+
+.result-background-host .video-el {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.video-debug-controls {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.lv-badge {
+  font-size: 1rem;
+  color: #6ad4ff;
+  border: 1px solid #6ad4ff;
+  border-radius: 5px;
+  padding: 0 0.4rem;
+  vertical-align: middle;
+}
+
+.rank {
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+.rank-S { color: #ffd479; }
+.rank-A { color: #ff9d6a; }
+.rank-B { color: #6ad4ff; }
+.rank-C { color: #9aa0b5; }
+.rank-D { color: #6b7088; }
+.rank-E { color: #565b70; }
+
+.dev-menu {
+  margin-top: 1.5rem;
+  padding: 0.8rem 1rem;
+  border: 1px dashed #4a3a55;
+  border-radius: 8px;
+  background: rgba(40, 20, 50, 0.3);
+}
+
+.dev-title {
+  color: #b388d4;
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.dev-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 0.3rem 0;
+  font-size: 0.85rem;
+  color: #9aa0b5;
+}
+
+.dev-row button {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+/* 段階切替（チャージ/構え/パンチ）の合図画像。画面中央に大きく出し、
+   格ゲー風の「スラム」登場＋エネルギー発散の退場で消える。 */
+.phase-cue-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.phase-cue-image {
+  /* オーラ色（RGB三値）。既定は青エネルギー。overload 変種は紅蓮に上書き。 */
+  --cue-glow: 90, 190, 255;
+  --cue-glow-strong: 120, 205, 255;
+  width: auto;
+  height: auto;
+  max-width: 70vw;
+  max-height: 64vh;
+  filter: drop-shadow(0 0 34px rgba(var(--cue-glow), 0.55)) drop-shadow(0 0 12px rgba(255, 255, 255, 0.4));
+  will-change: transform, opacity, filter;
+}
+
+/* チャージ100%以上の合図ではオーラをoverloadの紅蓮色にする。 */
+.phase-cue-image.is-overload {
+  --cue-glow: 255, 46, 24;
+  --cue-glow-strong: 255, 104, 34;
+}
+
+.phase-cue-overlay.is-in .phase-cue-image {
+  animation: phase-cue-in 240ms cubic-bezier(0.16, 1.5, 0.35, 1) both;
+}
+
+.phase-cue-overlay.is-out .phase-cue-image {
+  animation: phase-cue-out 340ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes phase-cue-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.45) rotate(-3deg);
+    filter: drop-shadow(0 0 40px rgba(var(--cue-glow-strong), 0.7)) brightness(2.4);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 34px rgba(var(--cue-glow), 0.55)) brightness(1);
+  }
+}
+
+@keyframes phase-cue-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 34px rgba(var(--cue-glow), 0.55));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+    filter: drop-shadow(0 0 46px rgba(var(--cue-glow-strong), 0.35)) blur(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-cue-overlay.is-in .phase-cue-image,
+  .phase-cue-overlay.is-out .phase-cue-image {
+    animation-duration: 1ms;
+  }
+}

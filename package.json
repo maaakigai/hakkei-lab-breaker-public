@@ -1,0 +1,43 @@
+{
+  "name": "hakkei-lab-breaker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "発勁ラボブレイカー — 身体入力つきインタラクティブ映像アプリ (Electron / TypeScript)",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "assets:audio-placeholders": "node scripts/generate-placeholder-audio.mjs",
+    "assets:strip-video-audio": "node scripts/strip-video-audio.mjs",
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test",
+    "dev": "npm run build && node scripts/launch-electron.mjs",
+    "dev:debug": "npm run build && node scripts/launch-electron.mjs --debug-ui",
+    "settings": "npm run build && node scripts/launch-electron.mjs --settings",
+    "registered-users": "npm run build && node scripts/launch-electron.mjs --registered-users",
+    "start": "node scripts/launch-electron.mjs",
+    "start:debug": "node scripts/launch-electron.mjs --debug-ui",
+    "mock:unity": "node scripts/mock-unity.mjs",
+    "mock:unity:calib": "node scripts/mock-unity.mjs --calib",
+    "sweep": "node scripts/sweep.mjs",
+    "make:recording": "node scripts/make-synthetic-recording.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.6",
+    "electron": "^43.2.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.15.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.18.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

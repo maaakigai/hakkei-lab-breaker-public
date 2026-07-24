@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "inputCheck": {
+    "mocopiBleReadyPolicy": "recent-only",
+    "mocopiBleRecentWindowMs": 1000
+  },
+  "udp": {
+    "host": "127.0.0.1",
+    "port": 45100,
+    "mocopiBlePort": 45150,
+    "maxDatagramBytes": 8192,
+    "heartbeatTimeoutMs": 1500,
+    "motionTimeoutMs": 1500,
+    "lowSampleRateHz": 20,
+    "requiredSampleRateHz": 30,
+    "requireSeq": true
+  },
+  "coordinates": {
+    "axisMap": {
+      "x": "x",
+      "y": "y",
+      "z": "z"
+    },
+    "sign": {
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "scaleMultiplier": 1,
+    "offset": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "defaultUpVector": {
+      "x": 0,
+      "y": 1,
+      "z": 0
+    },
+    "defaultForwardVector": {
+      "x": 0,
+      "y": 0,
+      "z": 1
+    },
+    "coordinateWarnAbsM": 3,
+    "coordinateInvalidAbsM": 10
+  },
+  "filter": {
+    "referenceHz": 30,
+    "minDtMs": 8,
+    "maxDtMs": 100,
+    "maxPositionJump": 1,
+    "maxReasonableVelocity": 8,
+    "maxReasonableAcceleration": 80,
+    "positionEmaAlpha": 0.35,
+    "velocityEmaAlpha": 0.45,
+    "accelerationEmaAlpha": 0.25
+  },
+  "jitter": {
+    "measurementWindowMs": 2000,
+    "rawJitterRms2sMaxM": 0.05,
+    "rawMaxJitter2sMaxM": 0.12,
+    "rawDrift2sMaxM": 0.08,
+    "filteredJitterRms2sMaxM": 0.03,
+    "filteredMaxJitter2sMaxM": 0.08,
+    "filteredDrift2sMaxM": 0.05,
+    "staticFalseHakkeiWindowMs": 10000,
+    "staticFalseHakkeiMaxCount": 0
+  },
+  "keyboard": {
+    "sampleRateHz": 60,
+    "tapVerticalStepM": 0.33,
+    "tapForwardStepM": 0.15,
+    "tapSpeedMps": 2,
+    "leftChargeKey": "KeyL",
+    "enterForwardDisplacementM": 0.3,
+    "enterDurationMs": 80,
+    "enterPunchIntensity": 1000,
+    "keyReleaseStaleMs": 500
+  }
+}

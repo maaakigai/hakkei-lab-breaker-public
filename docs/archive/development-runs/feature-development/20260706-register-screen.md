@@ -1,0 +1,48 @@
+# 20260706 register screen
+
+- 対象ステップ: Start Game 後の Register 画面追加。
+- 変更ファイル: `src/renderer/app.ts`, `src/renderer/styles.css`, `src/renderer/rankingStore.ts`, `test/ranking-store.test.mjs`, `docs/verification_checklist.md`, `docs/runs/20260706-register-screen.md`。
+- 採用: `START GAME` は直接 `InputCheck` へ進めず、Title サブ画面 `register` を表示する。`Join Game` で有効 nickname を確定した時だけ既存の `start` 遷移を呼ぶ。
+- 理由・根拠: Register はゲーム進行状態ではなくTitle配下の参加導線なので、`stateMachine.ts` に新状態を足さず既存のプレイ遷移契約を維持する。
+- 採用: QRは通信なしのCSS placeholderにし、手動nickname入力を必須の開始条件にする。
+- 理由・根拠: 今回はQRサーバーやスマホ登録を実装範囲に含めない。仮QRだけで進めるとPlayerProfile保存確認が曖昧になるため、ローカル保存が成立する手動入力を必須にした。
+- 採用: nickname は `/^[A-Za-z0-9_-]{1,16}$/`、検索はcase-insensitive、同名は既存 `PlayerProfile` を再利用する。
+- 理由・根拠: ユーザー指定の登録ルールに合わせ、Ranking BoardをユーザーごとのHigh Score表示に保つ。同名で別IDを増やすとランキング上の同一人物が重複しやすい。
+- 採用: Result保存は `store.currentPlayer` があればそのplayerへ紐づけ、debug fixture等で未選択の場合だけ `GUEST` fallbackを使う。
+- 理由・根拠: 通常導線ではRegister確定プレイヤーを保存対象にしつつ、開発用のResult直行経路を壊さないため。
+- 追記採用: Register画面から入力モード選択UIを削除し、上部見出しを `REGISTRATION`、QR見出しを `SCAN HERE`、手動入力区切りを `OR ENTER YOUR NAME` に変更した。
+- 追記理由・根拠: 入力モード選択はTitleのInput Settingsの責務であり、Registerは参加者登録だけに閉じる。表示はTitleメニューと同じ大文字・letter spacing・シアン/ゴールド罫線の方向へ寄せる。
+- 追記採用: Register画面ではゲームタイトルロゴを表示しない。
+- 追記理由・根拠: Registerは参加者登録に集中する画面として、画面見出し `REGISTRATION` を主タイトルにするため。
+- 追記採用: Register画面のBACKボタンを削除し、戻る操作はEscキーに集約した。`JOIN GAME` はInputCheckの `PROCEED` と同じCTAスタイルに寄せた。
+- 追記理由・根拠: 画面上の選択肢を登録/参加操作に集中させ、戻る操作は既存の安全操作であるEscに統一するため。
+- 追記採用: `state / titlePanel / settingsOpen` を持つ画面履歴を追加し、Ready前の戻る操作は固定画面ではなく直前の画面スナップショットへ戻す。InputCheck右下の `[ Esc ]` 表記とデバッグヒントは履歴末尾の `label` から生成する。
+- 追記理由・根拠: Start Game -> Register -> InputCheck の導線では現在の戻り先はRegisterだが、将来Ready前に別の確認画面が増えた場合も同じ `navigateBack()` で扱えるようにするため。表示文言も実際の戻り先と同じデータから出す。
+- 追記採用: Title状態では共通のKeyboard安全操作による `esc` 遷移を実行せず、Title専用キー処理に任せる。
+- 追記理由・根拠: 共通Keyboardハンドラが先にEscapeを拾うと、RegisterやInput SettingsなどTitle配下のサブ画面でもTitleメニュー直帰になり、「一つ前へ戻る」導線と表示文言が一致しないため。
+- 追記採用: 共通Keyboard安全操作のhandlerは処理済みなら `true` を返し、`installKeyboardInput` が `preventDefault()` と `stopImmediatePropagation()` を行う。Title状態のEscapeだけは `false` を返してTitle専用handlerへ渡す。
+- 追記理由・根拠: InputCheckでEscapeを押した時、共通handlerが `navigateBack()` でRegisterへ戻した後、同じkeydownがTitle専用handlerにも届くとRegisterからTitleメニューへもう一段戻ってしまう。状態機械の「プレイ中EscはTitle」契約は維持しつつ、履歴復帰できた1イベントだけをそこで止める必要があるため。
+- 追記確認: `npm run typecheck` PASS。`node --test test/state-machine.test.mjs test/play-loop.test.mjs` PASS。手動では `START GAME -> REGISTRATION -> JOIN GAME -> InputCheck` 後にEscを1回押し、TitleメニューではなくREGISTRATIONへ戻ることを見る。
+- 追記採用: Registerの `Nickname` ラベルを削除し、入力欄、補足文、JOINボタンを同じ幅で中央揃えにした。
+- 追記理由・根拠: Register画面はプレイヤー登録の単一操作に閉じており、入力欄のplaceholderと補足文で入力内容は分かる。青いラベルだけが視覚ノイズになっていたため、フォームの主導線を中央の入力欄とJOINボタンに集約する。
+- 追記確認: `npm run typecheck` PASS。`npm run lint` PASS。手動ではREGISTRATION画面で青い `Nickname` 表示が消え、入力フォームが中央に配置されていることを見る。
+- 追記採用: Title系画面右下の `[ S ] INPUT SETTINGS` ヒント文字は表示しない。
+- 追記理由・根拠: 現状この表示はクリック対象ではなく、ユーザーから見ると反応しないUIに見えるため。入力設定機能やTitle内のSキー処理は残し、誤認を生む表示だけを消す。
+- 追記確認: `npm run typecheck` PASS。`npm run lint` PASS。`npm run build` は `dist/renderer/sounds/BGM/main_bgm.wav` がロック中で `EBUSY` 失敗。
+- 追記採用: Registerのnickname入力欄下に、登録済み `PlayerProfile` の前方一致候補を表示する。検索はcase-insensitiveで、候補順はRanking Boardと同じ高スコア優先にする。候補クリックで入力欄をそのnicknameに置き換え、Join前に確認できる状態にする。
+- 追記理由・根拠: ユーザー指定の「ローマ字を入れたら登録済みで先頭一致したものを下部に全部出し、文字が増えるごとに絞る」に合わせる。候補元を既存ランキング保存データに限定することで、Registerの責務をローカル参加者選択に閉じ、スコア保存契約やMain生成入力契約へ影響させない。
+- 追記採用: nicknameの文字数下限を3文字から1文字へ変更した。使用可能文字は従来どおり `A-Z, 0-9, _ or -` に限定する。
+- 追記理由・根拠: 1文字の名前を使う参加者が来ても登録導線で詰まらないようにするため。文字種の拡張は保存済みnickname正規化や表示幅への影響が別途あるため、今回はユーザー指定の下限変更だけに閉じる。
+- 追記採用: 候補検索は完全一致でも非表示にせず、候補欄の非表示は `JOIN GAME` submit または候補クリック後だけにした。候補クリック後に再入力した場合は再度候補を表示する。
+- 追記理由・根拠: `A` という登録済みnicknameがある場合でも、`AAA` や `ABC` のような同じ先頭文字の登録済み候補を選べる必要があるため。完全一致を検索条件で消すと1文字名前と長い名前が共存した時に候補選択が詰まる。
+- 追記採用: Result画面のボタン文言を `Play Again` / `Exit` に変更した。イベントは既存の `replay` / `finish` のまま維持する。
+- 追記理由・根拠: ユーザー向け表示だけを英語ラベルへ変更し、Result後の状態遷移やBLE reset処理には触れないため。
+- 追記採用: Result画面の `Play Again` / `Exit` はTitleのAC風メニューに寄せ、透明ベース、中央揃え大文字、シアン/ゴールドの選択帯を使う。`Play Again` は初期選択相当の強調表示にする。
+- 追記理由・根拠: ResultはTitleへ戻る/再開する導線なので、Titleと同じ操作語彙に寄せると画面間の見た目と選択感が揃う。Result専用クラスに閉じ、他画面の `.actions` ボタンには影響させない。
+- 追記2採用: Result画面の選択肢DOMをTitleと同じ `nav.ac-menu > button.ac-menu-item > span` に揃え、`.actions` の汎用ボタンレイアウトを外した。
+- 追記2理由・根拠: ユーザー指定の「タイトルとまったく同じ」に合わせ、Result専用の見た目を増やさずTitleメニューのCSSをそのまま共有する。状態遷移は既存の `replay` / `finish` のまま維持し、表示構造だけを変更する。
+- 追記3採用: Result選択肢にも `data-result-index` と `mouseenter` 同期を追加し、Titleと同じく最後にマウスで触った項目へ `.selected` を移す。
+- 追記3理由・根拠: Titleのオレンジ背景エフェクトはCSSのhoverだけではなく `.selected` の付け替えで残るため、Resultでも同じ選択状態の動きを再現する必要がある。クリック時の `replay` / `finish` イベントは変更しない。
+- 確認結果: 実装時に `npm run typecheck`, `npm test`, `npm run build`, `npm run lint` で確認する。
+- 手動確認: `npm run dev:debug` → Titleで `START GAME` → ゲームタイトルロゴとBACKボタンは消え、`REGISTRATION`, `SCAN HERE`, 仮QR, `OR ENTER YOUR NAME` が表示され、Register画面内に入力モード切替がないことを見る。Register上のEscでTitleメニューへ戻る。Ranking Boardに既存の `A` / `AAA` / `ABC` / `PLAYER01` / `PLAYER02` がある状態でRegisterの入力欄に `A` と入力し、`AAA` や `ABC` が候補に出ることを見る。`p` → `pl` → `pla` と入力し、入力欄下の候補が前方一致で絞られることを見る。候補の `PLAYER01` をクリックすると入力欄が `PLAYER01` で埋まり、候補欄が消える。空欄や `PLAYER01!` では `JOIN GAME` 後にErrorが表示され、`A` や `PLAYER01` ではInputCheckへ進む。InputCheck右下に履歴由来の `[ Esc ] REGISTRATION` とデバッグヒント `Esc=REGISTRATION` が表示され、Escキーまたは右下ボタンでRegisterへ戻る。Result到達後、Ranking Boardに `PLAYER01` のHigh Scoreが表示される。同じ `player01` で再参加しても別行が増えず、同じプレイヤーの記録として更新される。
+- 残課題: 実QR生成、スマホ登録画面、自宅サーバー同期、Play again as same player確認は未実装。

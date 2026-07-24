@@ -1,0 +1,22 @@
+# 20260706 ranking board
+
+- 対象ステップ: Title から開けるローカル Ranking Board と Result のハイスコア通知。
+- 変更ファイル: `src/renderer/app.ts`, `src/renderer/styles.css`, `src/renderer/rankingStore.ts`, `test/ranking-store.test.mjs`, `docs/verification_checklist.md`, `docs/runs/20260706-ranking-board.md`。
+- 採用: QR / Player Select / Register は未実装とし、今回の保存対象プレイヤーは暫定 `GUEST` 固定にした。保存形式は後続の登録フローへ接続できるよう `PlayerProfile` と `ScoreRecord` に分けた。
+- 理由・根拠: ユーザー指定の実装順ではまず Electron 内だけで完結する Ranking Board を作る。外部サーバーやQRを先に入れると通信・登録・同期まで広がるため、今回の目的を「スコアボードだけ」に閉じる。
+- 採用: `High Score` は Electron Renderer が保持している `ScoreBreakdown.power` の整数値を保存し、ユーザーごとの最高値で並べる。スマホ/外部入力からスコア値は受け取らない。
+- 理由・根拠: スコア計算は既存のゲームフローで完了済みの `ScoreBreakdown` を使うのが最小で、要件の「スコアはElectron側で計算したものだけを保存」に合う。
+- 追記採用: Ranking Boardは1ユーザー1行だけ表示し、各ユーザー個人の `highScore` のみで競う。プレイ履歴 `ScoreRecord` は保存するが、Ranking Boardの行数には使わない。
+- 追記理由・根拠: 同じユーザーが複数回遊んでもランキング上で同一人物が重複しないようにするため。
+- 追記採用: Settings GUIに「ユーザー/スコア記録をリセット」ボタンを追加する。削除対象は登録済み `PlayerProfile`、High Score、`ScoreRecord`。
+- 追記理由・根拠: 会場テストや本番前にローカルPCのランキング状態を初期化できるようにするため。ゲーム設定JSONとは独立したlocalStorageデータなので、設定保存とは別ボタンにする。
+- 追記採用: Result画面ではランキング順位、プレイヤー名、今回スコアのランキング情報を表示せず、High Score更新時の `New High Score!` 通知だけを出す。
+- 追記理由・根拠: 1920x1080表示でResultの縦幅が増え、スクロールが必要になると発表時の見た目が崩れるため。Ranking Boardへの保存と順位表示はTitle内のRanking Boardに限定する。
+- 採用: Ranking Board は状態機械に新状態を追加せず、Title 内のサブ画面 `titlePanel="ranking"` として実装した。
+- 理由・根拠: 既存のプレイ状態遷移は Title -> InputCheck -> ... -> Result を維持する。ランキング閲覧はゲーム進行状態ではないため、`stateMachine.ts` の契約やテストを広げない。
+- 追記採用: ニックネームは保存時にtrim後大文字へ正規化し、Ranking Board描画時にも既存データを `toUpperCase()` して表示する。
+- 追記理由・根拠: 登録入力では大小を許容しつつ、ランキング上では表記ゆれを出さないため。既存localStorageに小文字名が残っていても画面表示を即時に大文字へ揃えられる。
+- 追記確認: `npm run typecheck` PASS。`node --test test/ranking-store.test.mjs` PASS。`npm run lint` PASS。手動では `player01` で登録してもRanking BoardのNickname列が `PLAYER01` になることを見る。
+- 確認結果: `npm run typecheck` 成功。`npm test` 成功（234 tests）。`npm run build` 成功。
+- 手動確認: `npm run dev:debug` で起動し、Title の `RANKING BOARD` を選ぶ。未プレイ時は `No scores recorded yet.` が出る。Debug の Result Fixture または通常プレイで Result に到達すると選択ユーザーのスコアが保存され、Title の Ranking Board に `Rank / Nickname / High Score / Registered / Last Played` が表示される。同じユーザーの低いスコア再プレイでは High Score が下がらず、行も増えない。高いスコアでは Result に `New High Score!` だけが出て、Result内にRankやRanking Board行は表示されない。`scripts/windows/Settings.bat` → 「ランキング記録」→ 「ユーザー/スコア記録をリセット」で全ランキングが消える。
+- 残課題: ニックネーム登録、同名制御、検索、同じユーザーで再プレイ確認、QR登録、自宅サーバー同期は未実装。
