@@ -10,17 +10,15 @@
 
 import { INITIAL_STATE, transition, type AppEvent, type AppState } from "./stateMachine.ts";
 import QRCode from "qrcode";
-import { installKeyboardInput, type KeyboardInputHandle } from "./keyboardInput.ts";
+import { installKeyboardInput, type ForcedHakkeiMode, type KeyboardInputHandle } from "./keyboardInput.ts";
 import { accumulatePunchCharge, buildPunchScoreBreakdown, PunchDetector } from "./punchCore.ts";
 import { diagnosticsHtml, statusPanelHtml } from "./diagnosticPanel.ts";
-import { selectRank, videoFileForLevel, videoFilesForLevel } from "./scoreCalculator.ts";
+import { criticalRateForPower, selectRank, videoFileForLevel, videoFilesForLevel } from "./scoreCalculator.ts";
 import { damageYenFromPower } from "./damageEstimate.ts";
 import { resultHtml } from "./resultPresenter.ts";
 import { formatBigIntYen } from "./yenFormatter.ts";
 import {
   DEFAULT_NICKNAME,
-  clearRankingBoard,
-  createEphemeralRankingStorage,
   loadRankingBoard,
   getOrCreatePlayerProfile,
   getOrCreateRemotePlayerProfile,
@@ -28,7 +26,6 @@ import {
   importPublicPlayerSuggestions,
   importServerRankingPlayers,
   rankingRows,
-  removePlayer,
   recordScoreForPlayer,
   recordScoreForDefaultPlayer,
   registeredNicknameSuggestions,
@@ -50,7 +47,7 @@ import {
   resultSfxNormalCountForRank,
   type ResultSfxManifest,
 } from "./resultSfxScheduler.ts";
-import type { AppConfigBundle } from "../shared/configTypes.ts";
+import type { AppConfigBundle, CriticalOutcomeConfig } from "../shared/configTypes.ts";
 import type { PunchInputSample } from "../shared/punchInput.ts";
 import type {
   BleSidecarStatusPayload,
@@ -130,7 +127,6 @@ function videoElementsSnapshot(includePreload = true): string {
 }
 
 let bundle: AppConfigBundle | null = null;
-const ephemeralRemoteRankingStorage = createEphemeralRankingStorage();
 
 function cfg(): AppConfigBundle {
   if (!bundle) {
@@ -166,8 +162,12 @@ interface Store {
   // magnitude-only play 状態
   chargeRaw: number; // Charge 中に積算したタメ量
   strengthPeak: number; // 直近 HakkeiReady の intensity ピーク（診断用）
+  participantAssistMode: boolean; // Shift でそのセッションだけ表示100%基準を下げる
   breakdown: ScoreBreakdown | null;
   punchTimedOut: boolean;
+  criticalActive: boolean;
+  selectedCriticalOutcome: CriticalOutcomeConfig | null;
+  forcedHakkeiMode: ForcedHakkeiMode;
   devOpen: boolean;
   settingsOpen: boolean;
   titlePanel: TitlePanel;
@@ -177,8 +177,6 @@ interface Store {
   registerDuplicate: PlayerProfile | null; // 同名既存プレイヤー確認中（「あなたですか？」）
   registerSuggestionsDismissed: boolean;
   registerSessionId: string | null;
-  registerGameToken: string | null;
-  registerJoinToken: string | null;
   registerPollStatus: RegisterPollStatus;
   registerPollMessage: string;
   registerReadyAtMs: number | null;
@@ -216,8 +214,12 @@ const store: Store = {
   lastDiagnostics: null,
   chargeRaw: 0,
   strengthPeak: 0,
+  participantAssistMode: false,
   breakdown: null,
   punchTimedOut: false,
+  criticalActive: false,
+  selectedCriticalOutcome: null,
+  forcedHakkeiMode: "none",
   devOpen: false,
   settingsOpen: false,
   titlePanel: "menu",
@@ -227,8 +229,6 @@ const store: Store = {
   registerDuplicate: null,
   registerSuggestionsDismissed: false,
   registerSessionId: null,
-  registerGameToken: null,
-  registerJoinToken: null,
   registerPollStatus: "idle",
   registerPollMessage: "Scan the QR code with your phone.",
   registerReadyAtMs: null,
@@ -337,7 +337,10 @@ const OVERCHARGE_CRACK_SOUNDS = [
   "SFX/placeholder-crack-01.wav",
   "SFX/placeholder-crack-02.wav",
 ] as const;
-// VideoPlayback の保険タイマー。通常動画が終了しない場合にタイトルへ復帰する。
+const CRITICAL_WIPE_COVER_MS = 260;
+const CRITICAL_WIPE_REVEAL_MS = 360;
+const CRITICAL_WIPE_END_MS = 720;
+// VideoPlayback の保険タイマー。Critical の2本連続再生も含め、止まった場合にタイトルへ復帰する。
 const VIDEO_WATCHDOG_MS = 30000;
 function remoteHttpBaseUrl(): string {
   return cfg().app.remoteSession.httpBaseUrl.replace(/\/+$/, "");
@@ -347,12 +350,16 @@ function isLocalMode(): boolean {
   return cfg().runtime.localMode;
 }
 
+function isDemoQrMode(): boolean {
+  return cfg().runtime.demoQr;
+}
+
 function isRemoteMode(): boolean {
-  return !isLocalMode() && cfg().app.remoteSession.enabled;
+  return !isLocalMode() && !isDemoQrMode() && cfg().app.remoteSession.enabled;
 }
 
 function rankingStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
-  return isRemoteMode() ? ephemeralRemoteRankingStorage : localStorage;
+  return localStorage;
 }
 
 async function requestRemoteApi(request: RemoteHttpRequest): Promise<RemoteHttpResponse> {
@@ -362,8 +369,7 @@ async function requestRemoteApi(request: RemoteHttpRequest): Promise<RemoteHttpR
   }
   return result.value;
 }
-const REMOTE_NICKNAME_PATTERN = /^[A-Z0-9._-]{1,16}$/;
-const REMOTE_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
+const REMOTE_NICKNAME_PATTERN = /^[A-Z0-9._ -]{1,16}$/;
 
 let activeTimer: ReturnType<typeof setTimeout> | null = null;
 let activeInterval: ReturnType<typeof setInterval> | null = null;
@@ -377,9 +383,10 @@ let videoWatchdog: ReturnType<typeof setTimeout> | null = null;
 let videoProgressInterval: ReturnType<typeof setInterval> | null = null;
 let videoHandle: VideoHandle | null = null;
 let mainBgmHandle: BgmHandle | null = null;
+let criticalBgmHandle: BgmHandle | null = null;
 let chargeSoundHandle: BgmHandle | null = null;
 let chargeSoundMode: "normal" | "over" | null = null;
-let activeBgm: "main" | null = null;
+let activeBgm: "main" | "critical" | null = null;
 const preparedVideos = new Map<string, PreparedVideo>();
 let resultVideoElement: HTMLVideoElement | null = null;
 let keyboard: KeyboardInputHandle | null = null;
@@ -387,7 +394,10 @@ let resultDamageAnimation: number | null = null;
 let resultSfxManifest: ResultSfxManifest | null = null;
 let resultSfxManifestLoading: Promise<ResultSfxManifest | null> | null = null;
 let resultSfxTimers: Array<ReturnType<typeof setTimeout>> = [];
+let criticalResultSfxStarted = false;
 let lastOverchargeCrackCount = 0;
+let criticalTransitionRunning = false;
+let criticalTransitionTimers: Array<ReturnType<typeof setTimeout>> = [];
 let lastSavedBreakdown: ScoreBreakdown | null = null;
 let latestSavedScore: SavedScoreResult | null = null;
 let lastPostedScore: SavedScoreResult | null = null;
@@ -429,6 +439,12 @@ function clearTimers(): void {
     clearInterval(videoProgressInterval);
     videoProgressInterval = null;
   }
+  for (const timer of criticalTransitionTimers) {
+    clearTimeout(timer);
+  }
+  criticalTransitionTimers = [];
+  criticalTransitionRunning = false;
+  document.querySelectorAll(".critical-transition-wipe").forEach((el) => el.remove());
   if (videoHandle !== null) {
     videoHandle.stop();
     videoHandle = null;
@@ -462,6 +478,8 @@ function resetPlayState(): void {
   store.strengthPeak = 0;
   store.breakdown = null;
   store.punchTimedOut = false;
+  store.criticalActive = false;
+  store.selectedCriticalOutcome = null;
   store.forcedVideoFile = null;
   store.forcedDebugLevel = null;
   store.playbackQueue = [];
@@ -474,6 +492,7 @@ function resetPlayState(): void {
   resultRankingBeforeScore = null;
   lastPhoneNotifiedScore = null;
   lastOverchargeCrackCount = 0;
+  criticalResultSfxStarted = false;
   resetHakkeiPrepState();
   void api.resetPlay({ reason: "manual-reset" });
 }
@@ -498,13 +517,26 @@ function currentChargeReady(): number {
   if (store.inputMode === "keyboard") {
     return p.chargeReadyThresholdKeyboard;
   }
-  return p.chargeReadyThreshold;
+  return store.participantAssistMode
+    ? p.participantAssistChargeReadyThreshold
+    : p.chargeReadyThreshold;
+}
+
+function resetParticipantAssistMode(reason: string): void {
+  if (!store.participantAssistMode) {
+    return;
+  }
+  store.participantAssistMode = false;
+  stateLog("PARTICIPANT_ASSIST", `off (${reason})`);
+  updateGameModeIndicators();
 }
 
 // パンチ発火 / タイムアウトで ScoreBreakdown を確定する（punchCore 純計算）。
 function finalizeScore(detected: boolean, timedOut: boolean, strengthRaw: number): void {
   store.punchTimedOut = timedOut;
   store.strengthPeak = strengthRaw;
+  store.criticalActive = false;
+  store.selectedCriticalOutcome = null;
   store.breakdown = buildPunchScoreBreakdown(
     {
       chargeRaw: store.chargeRaw,
@@ -518,6 +550,11 @@ function finalizeScore(detected: boolean, timedOut: boolean, strengthRaw: number
   if (isDebugMode() && store.forcedDebugLevel !== null) {
     store.breakdown = makeLevelFixture(store.forcedDebugLevel);
   }
+  if (detected && !timedOut && applyForcedHakkeiModeToScore()) {
+    stateLog("SCORE", `finalize(forced): ${breakdownSummary()}`);
+    return;
+  }
+  maybeApplyCritical();
   stateLog(
     "SCORE",
     `finalize: detected=${detected} timedOut=${timedOut} strength=${Math.round(strengthRaw)} charge=${Math.round(store.chargeRaw)} ${breakdownSummary()}`,
@@ -530,7 +567,38 @@ function breakdownSummary(): string {
   if (!b) {
     return "breakdown=null";
   }
-  return `power=${Math.round(b.power)} rank=${b.rank} lv=${b.videoLevel} damage=${b.damageYenText ?? b.damageYen}`;
+  const critical = store.criticalActive ? (store.selectedCriticalOutcome?.id ?? "on") : "no";
+  return `power=${Math.round(b.power)} rank=${b.rank} lv=${b.videoLevel} damage=${b.damageYenText ?? b.damageYen} critical=${critical}`;
+}
+
+function applyForcedHakkeiModeToScore(): boolean {
+  if (store.forcedHakkeiMode === "none") {
+    return false;
+  }
+  store.punchTimedOut = false;
+  store.strengthPeak = Math.max(store.strengthPeak, cfg().score.punch.punchMax);
+  store.criticalActive = true;
+  store.selectedCriticalOutcome = selectCriticalOutcome();
+  store.breakdown = makeCriticalFixture();
+  return true;
+}
+
+function forceCriticalHakkei(): boolean {
+  if (store.state !== "HakkeiReady" || !hakkeiArmed || store.breakdown !== null) {
+    return false;
+  }
+  store.punchTimedOut = false;
+  store.strengthPeak = Math.max(store.strengthPeak, cfg().score.punch.punchMax);
+  store.criticalActive = true;
+  store.selectedCriticalOutcome = selectCriticalOutcome();
+  store.breakdown = makeCriticalFixture();
+  stateLog("SCORE", `force-critical: ${breakdownSummary()}`);
+  dispatch("hakkeiDetected");
+  return true;
+}
+
+function forceCurrentModeHakkei(): boolean {
+  return store.forcedHakkeiMode === "critical" && forceCriticalHakkei();
 }
 
 // 構え終了 → パンチ検出を arm する。timeout を開始し、UI を「撃て！」へ。
@@ -637,12 +705,12 @@ function resetRegisterPanelState(): void {
   store.registerDuplicate = null;
   store.registerSuggestionsDismissed = false;
   store.registerSessionId = createRegisterSessionId();
-  store.registerGameToken = createGameToken();
-  store.registerJoinToken = null;
   store.registerPollStatus = "waiting";
-  store.registerPollMessage = isRemoteMode()
-    ? "Scan the QR code with your phone."
-    : "QR registration is disabled. Enter your name with the keyboard.";
+  store.registerPollMessage = isDemoQrMode()
+    ? "Recording mode: this QR is intentionally inactive. Enter your name with the keyboard."
+    : isRemoteMode()
+      ? "Scan the QR code with your phone."
+      : "QR registration is disabled. Enter your name with the keyboard.";
   store.registerReadyAtMs = null;
   store.registerInputCheckNotifiedSessionId = null;
   store.registerInputDeviceReadyNotifiedSessionId = null;
@@ -651,7 +719,7 @@ function resetRegisterPanelState(): void {
   store.registerCancelHandledAtMs = null;
   lastRenderedQrUrl = null;
   lastRenderedQrCanvas = null;
-  void startRemoteSession(store.registerSessionId, store.registerGameToken);
+  void startRemoteSession(store.registerSessionId);
   void syncRegisteredUsersForSuggestions();
 }
 
@@ -675,13 +743,10 @@ async function syncRegisteredUsersForSuggestions(force = false): Promise<void> {
         path: "/api/player-suggestions",
       });
       if (suggestionsResponse.ok && isPublicPlayerSuggestionsPayload(suggestionsResponse.body)) {
-        const suggestionsBoard =
-          suggestionsResponse.body.dataMode === "synthetic-demo"
-            ? loadRankingBoard(rankingStorage())
-            : importPublicPlayerSuggestions(
-                rankingStorage(),
-                suggestionsResponse.body.players,
-              );
+        const suggestionsBoard = importPublicPlayerSuggestions(
+          rankingStorage(),
+          suggestionsResponse.body.players,
+        );
         importedCount = Math.max(importedCount, suggestionsBoard.players.length);
         stateLog(
           "REMOTE",
@@ -713,11 +778,7 @@ async function syncRegisteredUsersForSuggestions(force = false): Promise<void> {
     store.serverRankingBoard = rankingPayload;
     store.serverRankingStatus = "ready";
     store.serverRankingMessage = "Server ranking loaded.";
-    const board =
-      isPublicRankingBoard(rankingResponse.body) &&
-      rankingResponse.body.dataMode === "synthetic-demo"
-        ? loadRankingBoard(rankingStorage())
-        : importServerRankingPlayers(rankingStorage(), rankingPayload);
+    const board = importServerRankingPlayers(rankingStorage(), rankingPayload);
     importedCount = Math.max(importedCount, board.players.length);
     lastRegisteredUsersSyncAtMs = Date.now();
     stateLog("REMOTE", `ranking users sync ok serverPlayers=${rankingPayload.players.length} localPlayers=${board.players.length}`);
@@ -774,6 +835,10 @@ function navigateBack(): boolean {
   store.settingsOpen = target.settingsOpen;
   store.titleMenuIndex = target.titleMenuIndex;
   store.registerError = null;
+  if (target.state === "Title") {
+    resetParticipantAssistMode("back-to-title");
+    keyboard?.setForcedHakkeiMode("none");
+  }
   render();
   return true;
 }
@@ -814,6 +879,7 @@ function dispatch(event: AppEvent): void {
   if (event === "replay" || event === "reset" || event === "esc" || event === "finish") {
     playMainBgm();
     resetPlayState();
+    resetParticipantAssistMode(event);
   }
   if (event === "finish") {
     clearResultVideo();
@@ -830,6 +896,8 @@ function dispatch(event: AppEvent): void {
     store.titleMenuIndex = 0;
     store.titlePanel = "menu";
     store.settingsOpen = false;
+    resetParticipantAssistMode("title");
+    keyboard?.setForcedHakkeiMode("none");
   }
   if (next === "Charge") {
     store.chargeRaw = 0;
@@ -907,81 +975,11 @@ function handlePhoneReadyCancel(sessionId: string, cancelAtMs: number): void {
   }
 }
 
-async function startRemoteSession(sessionId: string, gameToken: string): Promise<void> {
+async function startRemoteSession(sessionId: string): Promise<void> {
   if (!isRemoteMode()) {
     return;
   }
-  let sessionOpened = false;
-  for (const [attemptIndex, retryDelayMs] of [0, 250, 750].entries()) {
-    if (retryDelayMs > 0) {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelayMs));
-    }
-    try {
-      const opened = await requestRemoteApi({
-        method: "POST",
-        path: "/api/session-open",
-        body: { sessionId, gameToken },
-      });
-      if (!opened.ok) {
-        throw new Error(`server returned ${opened.status}`);
-      }
-      const payload =
-        typeof opened.body === "object" && opened.body !== null
-          ? opened.body as { sessionId?: unknown; opened?: unknown; joinToken?: unknown }
-          : null;
-      if (
-        payload === null ||
-        payload.sessionId !== sessionId ||
-        payload.opened !== true ||
-        (
-          payload.joinToken !== undefined &&
-          (
-            typeof payload.joinToken !== "string" ||
-            !REMOTE_TOKEN_PATTERN.test(payload.joinToken)
-          )
-        )
-      ) {
-        throw new Error("Registration server returned an invalid session credential.");
-      }
-      if (
-        store.registerSessionId !== sessionId ||
-        store.registerGameToken !== gameToken
-      ) {
-        return;
-      }
-      // Empty string preserves compatibility with a non-public legacy server.
-      store.registerJoinToken =
-        typeof payload.joinToken === "string" ? payload.joinToken : "";
-      lastRenderedQrUrl = null;
-      lastRenderedQrCanvas = null;
-      sessionOpened = true;
-      if (store.state === "Title" && store.titlePanel === "register") {
-        render();
-      }
-      break;
-    } catch (error) {
-      stateLog(
-        "REMOTE",
-        `session open attempt ${attemptIndex + 1} failed ${shortSessionId(sessionId)}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-  if (!sessionOpened) {
-    if (
-      store.registerSessionId === sessionId &&
-      store.registerGameToken === gameToken
-    ) {
-      store.registerPollStatus = "error";
-      store.registerPollMessage = "Could not create a secure QR session. Please retry.";
-      if (store.state === "Title" && store.titlePanel === "register") {
-        render();
-      }
-    }
-    return;
-  }
-  const result = await api.remoteSessionStart({ sessionId, gameToken });
+  const result = await api.remoteSessionStart({ sessionId });
   if (!result.ok) {
     stateLog("REMOTE", `ws start fallback ${shortSessionId(sessionId)}: ${result.messageJa}`);
   }
@@ -1012,10 +1010,8 @@ async function sendRemoteSessionEvent(
 
 async function notifyPhoneInputCheckReady(): Promise<void> {
   const sessionId = store.registerSessionId;
-  const gameToken = store.registerGameToken;
   if (
     !sessionId ||
-    !gameToken ||
     sessionId !== autoAdvancedRegisterSessionId ||
     store.registerInputCheckNotifiedSessionId === sessionId
   ) {
@@ -1031,7 +1027,6 @@ async function notifyPhoneInputCheckReady(): Promise<void> {
       method: "POST",
       path: "/api/session-input-check",
       query: { sessionId },
-      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1045,8 +1040,7 @@ async function notifyPhoneInputCheckReady(): Promise<void> {
 
 async function notifyPhoneInputCheckExit(playStarted: boolean = false): Promise<void> {
   const sessionId = store.registerSessionId;
-  const gameToken = store.registerGameToken;
-  if (!sessionId || !gameToken || sessionId !== autoAdvancedRegisterSessionId) {
+  if (!sessionId || sessionId !== autoAdvancedRegisterSessionId) {
     return;
   }
   if (await sendRemoteSessionEvent(playStarted ? "game.playStarted" : "game.inputExit", sessionId, { playStarted })) {
@@ -1058,7 +1052,6 @@ async function notifyPhoneInputCheckExit(playStarted: boolean = false): Promise<
       method: "POST",
       path: "/api/session-input-exit",
       query: { sessionId, play: playStarted },
-      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1071,8 +1064,7 @@ async function notifyPhoneInputCheckExit(playStarted: boolean = false): Promise<
 
 async function notifyPhoneInputDeviceWaiting(): Promise<void> {
   const sessionId = store.registerSessionId;
-  const gameToken = store.registerGameToken;
-  if (!sessionId || !gameToken || sessionId !== autoAdvancedRegisterSessionId) {
+  if (!sessionId || sessionId !== autoAdvancedRegisterSessionId) {
     return;
   }
   store.registerInputDeviceReadyNotifiedSessionId = null;
@@ -1085,7 +1077,6 @@ async function notifyPhoneInputDeviceWaiting(): Promise<void> {
       method: "POST",
       path: "/api/session-input-check",
       query: { sessionId },
-      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1098,10 +1089,8 @@ async function notifyPhoneInputDeviceWaiting(): Promise<void> {
 
 async function notifyPhoneInputDeviceReady(): Promise<void> {
   const sessionId = store.registerSessionId;
-  const gameToken = store.registerGameToken;
   if (
     !sessionId ||
-    !gameToken ||
     sessionId !== autoAdvancedRegisterSessionId ||
     !inputCheckReady()
   ) {
@@ -1117,7 +1106,6 @@ async function notifyPhoneInputDeviceReady(): Promise<void> {
       method: "POST",
       path: "/api/session-input-check",
       query: { sessionId, ready: true },
-      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1193,11 +1181,9 @@ async function notifyReadyPhoneInputDeviceState(epoch: number): Promise<void> {
 
 async function notifyPhoneResult(saved: SavedScoreResult): Promise<boolean> {
   const sessionId = store.registerSessionId;
-  const gameToken = store.registerGameToken;
   const breakdown = store.breakdown;
   if (
     !sessionId ||
-    !gameToken ||
     !breakdown ||
     sessionId !== autoAdvancedRegisterSessionId ||
     store.registerResultNotifiedSessionId === sessionId
@@ -1206,20 +1192,24 @@ async function notifyPhoneResult(saved: SavedScoreResult): Promise<boolean> {
   }
   store.registerResultNotifiedSessionId = sessionId;
   const damageYenText = breakdown.damageYenText ?? String(Math.max(0, Math.round(breakdown.damageYen)));
+  if (await sendRemoteSessionEvent("game.result", sessionId, {
+    playerId: saved.player.playerId.replace(/^remote-/, ""),
+    damageYen: Math.max(0, Math.round(breakdown.damageYen)),
+    damageYenText,
+    rank: breakdown.rank,
+  })) {
+    return true;
+  }
   try {
     const response = await requestRemoteApi({
       method: "POST",
       path: "/api/session-result",
       body: {
         sessionId,
-        gameToken,
         playerId: saved.player.playerId.replace(/^remote-/, ""),
-        score: saved.record.score,
         damageYen: Math.max(0, Math.round(breakdown.damageYen)),
         damageYenText,
         rank: breakdown.rank,
-        videoLevel: saved.record.videoLevel,
-        playedAtMs: saved.record.playedAtMs,
       },
     });
     if (!response.ok) {
@@ -1299,6 +1289,35 @@ function handleResultKey(e: KeyboardEvent): void {
   }
 }
 
+function isEditableKeyTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") {
+    return false;
+  }
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.isContentEditable === true
+  );
+}
+
+function handleParticipantAssistKey(e: KeyboardEvent): void {
+  if (e.repeat || (e.code !== "ShiftLeft" && e.code !== "ShiftRight")) {
+    return;
+  }
+  if (isEditableKeyTarget(e.target)) {
+    return;
+  }
+  store.participantAssistMode = !store.participantAssistMode;
+  stateLog(
+    "PARTICIPANT_ASSIST",
+    `${store.participantAssistMode ? "on" : "off"} state=${store.state} ready=${currentChargeReady()}`,
+  );
+  updateGameModeIndicators();
+  updateDiagnostics();
+}
+
 function openRegisterPanel(): void {
   pushNavigationHistory();
   store.titlePanel = "register";
@@ -1332,23 +1351,6 @@ function activateTitleMenu(): void {
   } else if (item.action === "quit-game") {
     void api.quitApp();
   }
-}
-
-// ランキングボードからユーザーデータ（プレイヤー＋スコア記録）を削除する。
-function deleteRankingPlayer(playerId: string, displayName: string): void {
-  if (!playerId) {
-    return;
-  }
-  const ok = window.confirm(`Delete data for "${displayName}"?\nThis cannot be undone.`);
-  if (!ok) {
-    return;
-  }
-  removePlayer(rankingStorage(), playerId);
-  // 削除したのが現在のプレイヤーなら参照もクリアする。
-  if (store.currentPlayer?.playerId === playerId) {
-    store.currentPlayer = null;
-  }
-  render();
 }
 
 // 入力モード切替（InputCheck の右下コマンド／キーから）。
@@ -2412,6 +2414,34 @@ function punchDiagHtml(): string {
   </table>`;
 }
 
+function forcedHakkeiModeHtml(): string {
+  if (store.forcedHakkeiMode === "none") {
+    return "";
+  }
+  const action = store.state === "HakkeiReady" ? "Enter to force strike" : "Held until strike window";
+  return `<div class="game-mode-indicator game-mode-indicator-critical">
+    <span>FORCED CRITICAL</span>
+    <small>Ctrl to cancel / ${action}</small>
+  </div>`;
+}
+
+function participantAssistModeHtml(): string {
+  if (!store.participantAssistMode) {
+    return "";
+  }
+  return `<div class="game-mode-indicator game-mode-indicator-assist">
+    <span>PARTICIPANT ASSIST</span>
+    <small>Shift to cancel / 100% at ${cfg().score.punch.participantAssistChargeReadyThreshold.toLocaleString("en-US")}</small>
+  </div>`;
+}
+
+function gameModeIndicatorsHtml(): string {
+  const indicators = `${forcedHakkeiModeHtml()}${participantAssistModeHtml()}`;
+  return indicators.length === 0
+    ? ""
+    : `<div id="game-mode-indicators" class="game-mode-indicators">${indicators}</div>`;
+}
+
 // 構え（心の準備）カウントダウン。HakkeiReady 入場〜arm まで。
 function hakkeiPrepHtml(): string {
   const prepMs = cfg().app.timers.hakkeiPrepMs;
@@ -2517,21 +2547,14 @@ function createRegisterSessionId(): string {
   return `hakkei-${Date.now().toString(36)}-${suffix}`.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
 }
 
-function createGameToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
-}
-
 function registerJoinUrl(): string | null {
-  if (!store.registerSessionId || store.registerJoinToken === null) {
+  if (isDemoQrMode()) {
+    return "https://example.invalid/hakkei-demo";
+  }
+  if (!store.registerSessionId) {
     return null;
   }
-  const fragment =
-    store.registerJoinToken.length > 0
-      ? `#joinToken=${encodeURIComponent(store.registerJoinToken)}`
-      : "";
-  return `${remoteHttpBaseUrl()}/join?sessionId=${encodeURIComponent(store.registerSessionId)}${fragment}`;
+  return `${remoteHttpBaseUrl()}/join?sessionId=${encodeURIComponent(store.registerSessionId)}`;
 }
 
 function remoteEntryTimingSummary(entry: RemoteSessionEntry): string {
@@ -2565,15 +2588,10 @@ function isRemoteSessionEntry(value: unknown): value is RemoteSessionEntry {
 }
 
 async function fetchRegisterEntry(sessionId: string): Promise<RemoteSessionEntry | null> {
-  const gameToken = store.registerGameToken;
-  if (!gameToken) {
-    throw new Error("Registration game token is unavailable.");
-  }
   const response = await requestRemoteApi({
     method: "GET",
     path: "/api/session-entry",
     query: { sessionId },
-    gameToken,
   });
   if (response.status === 404) {
     stateLog("REMOTE", `fetch entry ${shortSessionId(sessionId)} -> 404`);
@@ -2788,7 +2806,7 @@ function syncRegisterRemoteStatus(): void {
 }
 
 function renderRegisterQr(): void {
-  if (!isRemoteMode()) {
+  if (!isRemoteMode() && !isDemoQrMode()) {
     stopRegisterPolling();
     return;
   }
@@ -2815,7 +2833,11 @@ function renderRegisterQr(): void {
       light: "#f8fbff",
     },
   }).then(
-    () => startRegisterPolling(),
+    () => {
+      if (isRemoteMode()) {
+        startRegisterPolling();
+      }
+    },
     () => {
       if (lastRenderedQrCanvas === canvas) {
         lastRenderedQrUrl = null;
@@ -2845,7 +2867,7 @@ function registerSuggestionsHtml(query: string): string {
       data-register-suggestion="${escapeHtml(player.nickname)}"
     >
       <span>${idLabel ? `<small class="player-id">${escapeHtml(idLabel)}</small>` : ""}${escapeHtml(player.nickname.toUpperCase())}</span>
-      <small>${formatHighScoreYen(player.highScore)}</small>
+      <small>${formatHighScoreYen(player.highScore, player.highScoreCriticalBonusYen, false)}</small>
     </button>`;
   }).join("");
   return `
@@ -2865,7 +2887,7 @@ function registerDuplicateHtml(): string {
   return `
     <div class="register-duplicate" role="alertdialog" aria-label="Name already registered">
       <p class="register-duplicate-title">"${name}" ${idLabel ? `(${escapeHtml(idLabel)}) ` : ""}is already registered.</p>
-      <p class="register-duplicate-detail">High Score ${formatHighScoreYen(dup.highScore)} / Last Played ${escapeHtml(played)}</p>
+      <p class="register-duplicate-detail">High Score ${formatHighScoreYen(dup.highScore, dup.highScoreCriticalBonusYen)} / Last Played ${escapeHtml(played)}</p>
       <p class="register-duplicate-ask">Is this you?</p>
       <div class="register-duplicate-actions">
         <button class="ic-proceed-btn" data-register-confirm type="button"><span>Yes, that's me</span></button>
@@ -2879,8 +2901,19 @@ function registerScreenHtml(): string {
   const value = escapeHtml(store.registerNickname);
   const suggestions = registerSuggestionsHtml(store.registerNickname);
   const joinUrl = registerJoinUrl() ?? "";
-  const registrationAside = !isRemoteMode()
-    ? `<section class="register-qr" aria-label="Local mode">
+  const registrationAside = isDemoQrMode()
+    ? `<section class="register-qr register-qr-demo" aria-label="Demo QR recording mode">
+        <h3>DEMO QR — RECORDING ONLY</h3>
+        <div class="qr-placeholder">
+          <canvas id="register-qr-canvas" width="256" height="256" aria-label="Inactive demo QR code"></canvas>
+        </div>
+        <p class="register-qr-url">${escapeHtml(joinUrl)}</p>
+        <p id="register-remote-status" class="register-remote-status" data-status="registered">
+          ${escapeHtml(store.registerPollMessage)}
+        </p>
+      </section>`
+    : !isRemoteMode()
+      ? `<section class="register-qr" aria-label="Local mode">
         <h3>OFFLINE REGISTRATION</h3>
         <p class="register-remote-status" data-status="registered">Enter your name with the keyboard. Player information and scores saved on this PC will be used.</p>
       </section>`
@@ -2898,7 +2931,7 @@ function registerScreenHtml(): string {
     ? registerDuplicateHtml()
     : `
         <div class="register-suggestions-host" id="register-suggestions-host">${suggestions}</div>
-        <p id="register-hint" class="register-hint">1-16 characters: A-Z, 0-9, . _ or -</p>
+        <p id="register-hint" class="register-hint">1-16 characters: A-Z, 0-9, spaces, . _ or -</p>
         ${store.registerError ? `<p class="register-error">${escapeHtml(store.registerError)}</p>` : ""}
         <button class="ic-proceed-btn register-submit" type="submit"><span>JOIN GAME</span></button>`;
   return `
@@ -2908,7 +2941,7 @@ function registerScreenHtml(): string {
       </div>
       ${registrationAside}
       <form class="register-form" id="register-form">
-        <div class="register-divider"><span>${isRemoteMode() ? "OR ENTER YOUR NAME" : "ENTER YOUR NAME"}</span></div>
+        <div class="register-divider"><span>${isRemoteMode() || isDemoQrMode() ? "OR ENTER YOUR NAME" : "ENTER YOUR NAME"}</span></div>
         <label class="register-field">
           <input
             class="${invalid}"
@@ -2920,7 +2953,7 @@ function registerScreenHtml(): string {
             placeholder="PLAYER1"
             value="${value}"
             maxlength="16"
-            pattern="[A-Z0-9._-]{1,16}"
+            pattern="[A-Z0-9._ -]{1,16}"
             aria-describedby="register-hint"
             aria-controls="register-suggestions"
           />
@@ -2931,11 +2964,15 @@ function registerScreenHtml(): string {
 }
 
 function normalizeRegisterNicknameInput(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9._-]/g, "").slice(0, 16);
+  return value.toUpperCase().replace(/[^A-Z0-9._ -]/g, "").slice(0, 16);
 }
 
-function formatHighScoreYen(highScore: number): string {
-  return `¥ ${highScore.toLocaleString("en-US")}`;
+function formatHighScoreYen(highScore: number, bonusYen?: string, withBonus = true): string {
+  const base = `¥ ${highScore.toLocaleString("en-US")}`;
+  if (!withBonus || bonusYen === undefined || bonusYen === "0" || !/^[0-9]+$/.test(bonusYen)) {
+    return base;
+  }
+  return `${base} <span class="score-critical-bonus">(+ ${formatBigIntYen(BigInt(bonusYen))})</span>`;
 }
 
 function playerNumberLabel(player: PlayerProfile): string {
@@ -2951,8 +2988,6 @@ function isPublicPlayerSuggestionsPayload(
   }
   const payload = value as Partial<PublicPlayerSuggestionsPayload>;
   return (
-    (payload.dataMode === undefined || payload.dataMode === "synthetic-demo") &&
-    Number.isFinite(payload.generatedAtMs) &&
     Array.isArray(payload.players) &&
     payload.players.every((player) =>
       typeof player === "object" &&
@@ -2966,7 +3001,11 @@ function isPublicPlayerSuggestionsPayload(
       (
         player.lastPlayedAtMs === null ||
         (Number.isFinite(player.lastPlayedAtMs) && player.lastPlayedAtMs >= 0)
-      )
+      ) &&
+      Number.isFinite(player.highScore) &&
+      player.highScore >= 0 &&
+      Number.isInteger(player.playCount) &&
+      player.playCount >= 0
     )
   );
 }
@@ -2978,8 +3017,6 @@ function isPublicRankingBoard(value: unknown): value is PublicRankingBoard {
   const board = value as Partial<PublicRankingBoard>;
   return (
     board.schemaVersion === 1 &&
-    (board.dataMode === undefined || board.dataMode === "synthetic-demo") &&
-    (board.submissionScope === undefined || board.submissionScope === "response-only") &&
     (
       board.submittedPlayerNumber === undefined ||
       (
@@ -3004,6 +3041,8 @@ function isPublicRankingBoard(value: unknown): value is PublicRankingBoard {
       ) &&
       Number.isFinite(player.highScore) &&
       player.highScore >= 0 &&
+      typeof player.highScoreCriticalBonusYen === "string" &&
+      /^[0-9]+$/.test(player.highScoreCriticalBonusYen) &&
       Number.isInteger(player.playCount) &&
       player.playCount >= 0
     )
@@ -3040,6 +3079,7 @@ function publicRankingBoardAsLocal(value: unknown): RankingBoardData | null {
         registeredAtMs: player.registeredAtMs,
         lastPlayedAtMs: player.lastPlayedAtMs,
         highScore: Math.round(player.highScore),
+        highScoreCriticalBonusYen: player.highScoreCriticalBonusYen,
         playCount: player.playCount,
       };
     }),
@@ -3068,12 +3108,7 @@ async function fetchServerRankingBoard(): Promise<void> {
       throw new Error("Ranking server returned an invalid board.");
     }
     store.serverRankingBoard = payload;
-    if (
-      isPublicRankingBoard(response.body) &&
-      response.body.dataMode !== "synthetic-demo"
-    ) {
-      importServerRankingPlayers(rankingStorage(), payload);
-    }
+    importServerRankingPlayers(rankingStorage(), payload);
     store.serverRankingStatus = "ready";
     store.serverRankingMessage = "Server ranking loaded.";
     render();
@@ -3093,15 +3128,12 @@ async function postScoreToServer(saved: SavedScoreResult): Promise<boolean> {
     return true;
   }
   const sessionId = store.registerSessionId;
-  const gameToken = store.registerGameToken;
-  if (!sessionId || !gameToken) {
+  if (!sessionId) {
     store.serverRankingStatus = "error";
     store.serverRankingMessage = "The score session is not available.";
     return false;
   }
   const payload = {
-    sessionId,
-    gameToken,
     player: saved.player,
     record: saved.record,
   };
@@ -3119,20 +3151,15 @@ async function postScoreToServer(saved: SavedScoreResult): Promise<boolean> {
       store.serverRankingBoard = board;
       store.serverRankingStatus = "ready";
       store.serverRankingMessage = "Server ranking synced.";
+      const localBoard = importServerRankingPlayers(rankingStorage(), board);
+      const syncedCurrent = localBoard.players.find(
+        (player) => player.playerId === saved.player.playerId,
+      );
       if (
-        isPublicRankingBoard(response.body) &&
-        response.body.dataMode !== "synthetic-demo"
+        syncedCurrent !== undefined &&
+        store.currentPlayer?.playerId === saved.player.playerId
       ) {
-        const localBoard = importServerRankingPlayers(rankingStorage(), board);
-        const syncedCurrent = localBoard.players.find(
-          (player) => player.playerId === saved.player.playerId,
-        );
-        if (
-          syncedCurrent !== undefined &&
-          store.currentPlayer?.playerId === saved.player.playerId
-        ) {
-          store.currentPlayer = syncedCurrent;
-        }
+        store.currentPlayer = syncedCurrent;
       }
       return true;
     }
@@ -3178,7 +3205,7 @@ function rankingBoardHtml(): string {
         <td>${index + 1}</td>
         <td>${escapeHtml(idLabel)}</td>
         <td>${name}</td>
-        <td>${formatHighScoreYen(player.highScore)}</td>
+        <td>${formatHighScoreYen(player.highScore, player.highScoreCriticalBonusYen)}</td>
         <td>${relativeTimeAgo(player.registeredAtMs, nowMs)}</td>
         <td>${escapeHtml(lastPlayed)}</td>
       </tr>`;
@@ -3511,7 +3538,7 @@ function resultRankingSummaryHtml(saved: SavedScoreResult | null): string {
       <div class="result-ranking-best">
         <div class="result-ranking-best-row">
           <span>BEST DAMAGE</span>
-          <strong>${formatHighScoreYen(currentPlayer.highScore)}</strong>
+          <strong>${formatHighScoreYen(currentPlayer.highScore, currentPlayer.highScoreCriticalBonusYen, false)}</strong>
         </div>
         <div class="result-ranking-best-row">
           <span>RANK</span>
@@ -3609,6 +3636,7 @@ function screenHtml(state: AppState): string {
           command: "READY YOUR STANCE",
           timerHtml: `<span id="ready-count">3s</span>`,
         })}
+        ${gameModeIndicatorsHtml()}
         ${chargeHudHtml()}
         ${isDebugMode() ? `<div class="actions">
           <button data-event="countdownEnd">今すぐ開始</button>
@@ -3626,6 +3654,7 @@ function screenHtml(state: AppState): string {
           command: tip,
           timerHtml: `<span id="phase-timer">${(cfg().app.timers.chargeMs / 1000).toFixed(1)}s</span>`,
         })}
+        ${gameModeIndicatorsHtml()}
         ${chargeHudHtml()}
         ${isDebugMode() ? diagSlot() : ""}
         ${isDebugMode() ? `<div class="actions"><button data-event="chargeDone">スキップ</button></div>` : ""}`;
@@ -3640,6 +3669,7 @@ function screenHtml(state: AppState): string {
           command: tip,
           timerHtml: `<span id="hakkei-timer">${(timerMs / 1000).toFixed(1)}s</span>`,
         })}
+        ${gameModeIndicatorsHtml()}
         ${chargeHudHtml()}
         ${isDebugMode() ? diagSlot() : ""}
         ${isDebugMode() ? `<div class="actions">
@@ -3671,6 +3701,7 @@ function screenHtml(state: AppState): string {
         ${resultHtml(
           store.breakdown,
           isDebugMode(),
+          store.selectedCriticalOutcome,
           cfg().score.resultDamageReport,
           resultHighScoreNoticeHtml(savedScore),
         )}
@@ -3944,13 +3975,6 @@ function wire(root: HTMLElement): void {
     }
   });
 
-  // ランキングボードの各行の削除ボタン。
-  root.querySelectorAll<HTMLButtonElement>("[data-delete-player]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      deleteRankingPlayer(btn.dataset.deletePlayer ?? "", btn.dataset.deleteName ?? "");
-    });
-  });
-
   const registerForm = root.querySelector<HTMLFormElement>("#register-form");
   registerForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -4070,6 +4094,113 @@ function makeLevelFixture(level: VideoLevel): ScoreBreakdown {
   };
 }
 
+function makeCriticalFixture(): ScoreBreakdown {
+  const score = cfg().score;
+  const critical = store.selectedCriticalOutcome;
+  const sThreshold = score.rankThresholds.find((item) => item.rank === "S")?.minPower ?? 600000;
+  const level5Power = score.videoLevels.find((item) => item.level === 5)?.minPower ?? sThreshold;
+  const punchRaw = score.punch.punchMax;
+  const baseBreakdown = buildPunchScoreBreakdown(
+    {
+      chargeRaw: store.chargeRaw,
+      punchStrengthRaw: punchRaw,
+      punchDetected: true,
+      punchTimedOut: false,
+    },
+    score,
+    currentChargeReady(),
+  );
+  const power = Math.max(baseBreakdown.power, sThreshold, level5Power);
+  const baseDamageYen = damageYenFromPower(power, score.power);
+  const criticalBonusYen = damageItemsBonusBigInt(critical?.damageItems ?? []);
+  const totalDamageYen = BigInt(baseDamageYen) + criticalBonusYen;
+  return {
+    rightChargeScore: 100,
+    leftChargeScore: 0,
+    hakkeiScore: 100,
+    hakkeiDetected: true,
+    hakkeiTimedOut: false,
+    power,
+    baseDamageYen,
+    damageYen: safeNumberFromBigInt(totalDamageYen),
+    damageYenText: totalDamageYen.toString(),
+    rank: "S",
+    videoLevel: 5,
+    raw: {
+      rightChargeRaw: currentChargeReady(),
+      leftChargeRaw: 0,
+      hakkeiVelocityPeak: punchRaw,
+      hakkeiAccelerationPeak: punchRaw,
+      hakkeiDisplacement: punchRaw,
+    },
+  };
+}
+
+function selectCriticalOutcome(): CriticalOutcomeConfig | null {
+  const critical = cfg().critical;
+  if (!critical.enabled) {
+    return null;
+  }
+  const totalWeight = critical.outcomes.reduce((sum, outcome) => sum + outcome.weight, 0);
+  if (totalWeight <= 0) {
+    return critical.outcomes.find((outcome) => outcome.id === critical.defaultOutcomeId)
+      ?? critical.outcomes[0]
+      ?? null;
+  }
+  let cursor = Math.random() * totalWeight;
+  for (const outcome of critical.outcomes) {
+    cursor -= outcome.weight;
+    if (cursor <= 0) {
+      return outcome;
+    }
+  }
+  return critical.outcomes[critical.outcomes.length - 1] ?? null;
+}
+
+function maybeApplyCritical(): void {
+  const critical = cfg().critical;
+  if (!critical.enabled || !store.breakdown || store.breakdown.rank !== "S") {
+    return;
+  }
+  if (store.breakdown.hakkeiTimedOut || !store.breakdown.hakkeiDetected) {
+    return;
+  }
+  const score = cfg().score;
+  const sThreshold = score.rankThresholds.find((item) => item.rank === "S")?.minPower ?? 0;
+  const rate = criticalRateForPower(store.breakdown.power, {
+    sThreshold,
+    maxPower: score.punch.powerK,
+    baseRate: critical.baseRateOnSRank,
+    maxRate: critical.maxRateOnSRank,
+    gamma: critical.rateGamma,
+  });
+  if (Math.random() >= rate) {
+    return;
+  }
+  const outcome = selectCriticalOutcome();
+  if (outcome === null) {
+    return;
+  }
+  store.criticalActive = true;
+  store.selectedCriticalOutcome = outcome;
+  const criticalBonusYen = damageItemsBonusBigInt(outcome.damageItems);
+  const totalDamageYen = BigInt(store.breakdown.baseDamageYen) + criticalBonusYen;
+  store.breakdown = {
+    ...store.breakdown,
+    damageYen: safeNumberFromBigInt(totalDamageYen),
+    damageYenText: totalDamageYen.toString(),
+  };
+}
+
+function damageItemsBonusBigInt(items: Array<{ bonusDamageYen: number | string }>): bigint {
+  return items.reduce((sum, item) => sum + BigInt(item.bonusDamageYen), 0n);
+}
+
+function safeNumberFromBigInt(value: bigint): number {
+  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+  return value > maxSafe ? Number.MAX_SAFE_INTEGER : Number(value);
+}
+
 function updateCountdownText(elId: string, totalMs: number, startedAt: number): void {
   const remaining = Math.max(0, totalMs - (performance.now() - startedAt));
   const el = document.getElementById(elId);
@@ -4088,6 +4219,23 @@ function updateHakkeiPrompt(): void {
   if (commandEl) {
     commandEl.textContent = hakkeiArmed ? hakkeiActionCommand() : "HOLD STANCE";
   }
+  updateGameModeIndicators();
+}
+
+function updateGameModeIndicators(): void {
+  const existing = document.getElementById("game-mode-indicators");
+  const visibleStates: AppState[] = ["Ready", "Charge", "HakkeiReady"];
+  const html = visibleStates.includes(store.state) ? gameModeIndicatorsHtml() : "";
+  if (html.length === 0) {
+    existing?.remove();
+    return;
+  }
+  if (existing) {
+    existing.outerHTML = html;
+    return;
+  }
+  const prompt = document.querySelector(".game-prompt");
+  prompt?.insertAdjacentHTML("afterend", html);
 }
 
 function startCountdown(elId: string, totalMs: number, onDone: () => void): void {
@@ -4105,6 +4253,14 @@ function videoFilesForPlayback(): string[] {
   if (store.forcedVideoFile !== null) {
     return [store.forcedVideoFile];
   }
+  if (store.selectedCriticalOutcome !== null) {
+    const labVideoFile =
+      store.selectedCriticalOutcome.labVideoFile
+      ?? randomVideoFileForLevel(store.breakdown?.videoLevel ?? 5);
+    return labVideoFile === store.selectedCriticalOutcome.videoFile
+      ? [labVideoFile]
+      : [labVideoFile, store.selectedCriticalOutcome.videoFile];
+  }
   const level = store.breakdown?.videoLevel ?? 0;
   const levelFiles = videoFilesForLevel(level, cfg().score);
   if (levelFiles.length === 0) {
@@ -4121,6 +4277,14 @@ function currentVideoFileForPlayback(): string {
   return store.currentPlaybackFile;
 }
 
+function randomVideoFileForLevel(level: VideoLevel): string {
+  const files = videoFilesForLevel(level, cfg().score);
+  if (files.length === 0) {
+    return videoFileForLevel(0, cfg().score);
+  }
+  return files[Math.floor(Math.random() * files.length)] ?? files[0];
+}
+
 function configuredVideoFiles(): string[] {
   const files = new Set<string>();
   for (const level of cfg().score.videoLevels) {
@@ -4132,6 +4296,12 @@ function configuredVideoFiles(): string[] {
     if (outcome?.video.kind === "fixed") {
       files.add(outcome.video.file);
     }
+  }
+  for (const outcome of cfg().critical.outcomes) {
+    if (outcome.labVideoFile !== undefined) {
+      files.add(outcome.labVideoFile);
+    }
+    files.add(outcome.videoFile);
   }
   return [...files];
 }
@@ -4177,11 +4347,30 @@ function playMainBgm(): void {
     return;
   }
   stateLog("AUDIO", `bgm: ${activeBgm ?? "none"} -> main`);
+  criticalBgmHandle?.stop();
+  criticalBgmHandle = null;
   if (mainBgmHandle === null) {
     mainBgmHandle = createBgm(cfg().app.audio.bgm, bgmCallbacks("main"));
   }
   activeBgm = "main";
   void mainBgmHandle.play();
+}
+
+function playCriticalBgm(): void {
+  if (activeBgm === "critical") {
+    return;
+  }
+  stateLog("AUDIO", `bgm: ${activeBgm ?? "none"} -> critical`);
+  mainBgmHandle?.stop();
+  mainBgmHandle = null;
+  if (criticalBgmHandle === null) {
+    criticalBgmHandle = createBgm(
+      { ...cfg().app.audio.criticalBgm, autoplay: true },
+      bgmCallbacks("critical"),
+    );
+  }
+  activeBgm = "critical";
+  void criticalBgmHandle.play();
 }
 
 function playChargeSound(): void {
@@ -4219,6 +4408,28 @@ function playOverchargeCrackSound(): void {
       maxVolume: 10,
     },
     bgmCallbacks("overcharge-crack"),
+  );
+}
+
+function playCriticalTransitionSound(): void {
+  playOneShotAudio(
+    {
+      file: cfg().app.audio.transitionSound.file,
+      volume: cfg().app.audio.transitionSound.volume,
+      maxVolume: 10,
+    },
+    bgmCallbacks("critical-transition"),
+  );
+}
+
+function playCriticalVideoStartSound(): void {
+  playOneShotAudio(
+    {
+      file: cfg().app.audio.criticalVideoStartSound.file,
+      volume: cfg().app.audio.criticalVideoStartSound.volume,
+      maxVolume: 10,
+    },
+    bgmCallbacks("critical-video-start"),
   );
 }
 
@@ -4372,10 +4583,11 @@ async function startResultVoiceSfx(): Promise<void> {
     return;
   }
   clearResultSfxTimers();
+  const isCriticalResult = store.selectedCriticalOutcome !== null;
   const rank = store.breakdown?.rank ?? "E";
   const schedule = createResultSfxSchedule(manifest, cfg().app.audio.resultVoiceSfx, {
-    normalCount: resultSfxNormalCountForRank(rank),
-    includeUnique: rank === "S" || rank === "A",
+    normalCount: isCriticalResult ? 13 : resultSfxNormalCountForRank(rank),
+    includeUnique: isCriticalResult || rank === "S" || rank === "A",
     includeFeatured: rank === "A" || rank === "S",
   });
   stateLog(
@@ -4400,13 +4612,54 @@ async function startResultVoiceSfx(): Promise<void> {
   }
 }
 
+async function startCriticalVideoVoiceSfx(): Promise<void> {
+  if (criticalResultSfxStarted) {
+    return;
+  }
+  criticalResultSfxStarted = true;
+  const manifest = await loadResultSfxManifest();
+  if (store.selectedCriticalOutcome === null || manifest === null) {
+    return;
+  }
+  clearResultSfxTimers();
+  const schedule = createResultSfxSchedule(manifest, cfg().app.audio.resultVoiceSfx, {
+    normalCount: manifest.normal.length,
+    includeUnique: false,
+    includeFeatured: false,
+  });
+  for (const item of schedule) {
+    const timer = setTimeout(() => {
+      if (store.selectedCriticalOutcome === null) {
+        return;
+      }
+      playOneShotAudio(
+        {
+          file: item.file,
+          volume: cfg().app.audio.resultVoiceSfx.criticalVideoNormalVolume,
+          maxVolume: 10,
+        },
+        bgmCallbacks(`critical-video-${item.label}`),
+      );
+    }, item.delayMs);
+    resultSfxTimers.push(timer);
+  }
+}
+
 function stopChargeSound(): void {
   chargeSoundHandle?.stop();
   chargeSoundHandle = null;
   chargeSoundMode = null;
 }
 
-function syncBgmForPlayback(_file: string | null): void {
+function isCriticalVideoFile(file: string): boolean {
+  return store.selectedCriticalOutcome?.videoFile === file;
+}
+
+function syncBgmForPlayback(file: string | null): void {
+  if (file !== null && isCriticalVideoFile(file)) {
+    playCriticalBgm();
+    return;
+  }
   playMainBgm();
 }
 
@@ -4453,6 +4706,10 @@ function playNextQueuedVideo(): boolean {
   if (nextFile === undefined) {
     return false;
   }
+  if (shouldUseCriticalTransition(nextFile)) {
+    startCriticalTransitionTo(nextFile);
+    return true;
+  }
   if (videoHandle !== null) {
     videoHandle.stop();
     videoHandle = null;
@@ -4464,8 +4721,56 @@ function playNextQueuedVideo(): boolean {
   return true;
 }
 
+function shouldUseCriticalTransition(nextFile: string): boolean {
+  return (
+    store.breakdown?.videoLevel === 5 &&
+    store.currentPlaybackFile !== null &&
+    !isCriticalVideoFile(store.currentPlaybackFile) &&
+    isCriticalVideoFile(nextFile) &&
+    !criticalTransitionRunning
+  );
+}
+
+function startCriticalTransitionTo(nextFile: string): void {
+  stateLog("VIDEO", `critical-wipe start: ${store.currentPlaybackFile} -> ${nextFile}`);
+  criticalTransitionRunning = true;
+  playCriticalTransitionSound();
+
+  const overlay = document.createElement("div");
+  overlay.className = "critical-transition-wipe";
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.appendChild(overlay);
+
+  criticalTransitionTimers.push(setTimeout(() => {
+    if (videoHandle !== null) {
+      videoHandle.stop();
+      videoHandle = null;
+    }
+    store.currentPlaybackFile = nextFile;
+    ensureVideoPreloaded(nextFile);
+    mountVideo({ syncBgm: false });
+  }, CRITICAL_WIPE_COVER_MS));
+
+  criticalTransitionTimers.push(setTimeout(() => {
+    playCriticalBgm();
+  }, CRITICAL_WIPE_REVEAL_MS));
+
+  criticalTransitionTimers.push(setTimeout(() => {
+    overlay.remove();
+    criticalTransitionRunning = false;
+    criticalTransitionTimers = [];
+    stateLog("VIDEO", `critical-wipe end: playing=${store.currentPlaybackFile}`);
+  }, CRITICAL_WIPE_END_MS));
+}
+
 function handleVideoEnded(): void {
-  stateLog("VIDEO", `ended: file=${store.currentPlaybackFile} queue=[${store.playbackQueue.join(", ")}]`);
+  stateLog(
+    "VIDEO",
+    `ended: file=${store.currentPlaybackFile} queue=[${store.playbackQueue.join(", ")}] transitionRunning=${criticalTransitionRunning}`,
+  );
+  if (criticalTransitionRunning) {
+    return;
+  }
   if (playNextQueuedVideo()) {
     return;
   }
@@ -4488,6 +4793,12 @@ function mountVideo(options: { syncBgm?: boolean } = {}): void {
   const file = currentVideoFileForPlayback();
   if (syncBgm) {
     syncBgmForPlayback(file);
+  }
+  if (isCriticalVideoFile(file)) {
+    if (!criticalResultSfxStarted) {
+      playCriticalVideoStartSound();
+    }
+    void startCriticalVideoVoiceSfx();
   }
   const prepared = takePreparedVideo(file);
   stateLog(
@@ -4647,6 +4958,8 @@ function recoverToTitleOnError(source: string, detail: unknown): void {
     store.settingsOpen = false;
     store.titleMenuIndex = 0;
     store.lastError = null;
+    resetParticipantAssistMode("recover");
+    keyboard?.setForcedHakkeiMode("none");
     render();
   } catch {
     location.reload(); // タイトル描画すら失敗する最悪ケースは再読み込みで復帰。
@@ -4672,16 +4985,13 @@ async function start(): Promise<void> {
     return;
   }
   bundle = res.value;
-  if (isRemoteMode()) {
-    // Ranking data shared one localStorage key in older builds, so there is no
-    // reliable way to separate remote rows from local-only rows. In remote
-    // mode, clear that whole ranking domain before using memory storage.
-    clearRankingBoard(localStorage);
-  }
-  store.inputMode = isDebugMode() ? bundle.app.defaultInputMode : "mocopi-ble";
+  store.inputMode =
+    isDebugMode() || isDemoQrMode()
+      ? bundle.app.defaultInputMode
+      : "mocopi-ble";
   stateLog(
     "APP",
-    `start: uiMode=${bundle.runtime.uiMode} localMode=${bundle.runtime.localMode} inputMode=${store.inputMode} electron=${api.versions.electron} chrome=${api.versions.chrome}`,
+    `start: uiMode=${bundle.runtime.uiMode} localMode=${bundle.runtime.localMode} demoQr=${bundle.runtime.demoQr} inputMode=${store.inputMode} electron=${api.versions.electron} chrome=${api.versions.chrome}`,
   );
   // タイトル先行接続: mocopi-ble なら起動直後（タイトル表示中）に sidecar を spawn＋BLE 接続しておく。
   // 受信は有効化しない（applyMode を呼ばない）ので、タイトル中に packet はゲームへ流れない
@@ -4705,8 +5015,14 @@ async function start(): Promise<void> {
     } else if (key === "KeyR") {
       dispatch("reset");
       return true;
+    } else if (key === "ForceEnter") {
+      return forceCurrentModeHakkei();
     }
     return false;
+  }, (mode) => {
+    store.forcedHakkeiMode = mode;
+    stateLog("FORCED_HAKKEI", `${mode} state=${store.state}`);
+    updateGameModeIndicators();
   });
 
   // Titleメニュー操作（矢印/Enter/S）。ゲーム入力(installKeyboardInput)とは独立。
@@ -4715,6 +5031,8 @@ async function start(): Promise<void> {
   window.addEventListener("keydown", handleInputCheckKey);
   // Resultメニュー操作（十字キーで移動・Enterで決定）。
   window.addEventListener("keydown", handleResultKey);
+  // Participant Assist: Shift でそのセッションだけチャージ100%基準を下げる。
+  window.addEventListener("keydown", handleParticipantAssistKey);
 
   // game loop は PunchInputSample（Main 生成）で進める。
   api.onPunchInput(onPunchInput);

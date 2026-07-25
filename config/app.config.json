@@ -28,6 +28,11 @@
       "volume": 0.8,
       "autoplay": true
     },
+    "criticalBgm": {
+      "file": "BGM/placeholder-main-loop.wav",
+      "loop": true,
+      "volume": 0.5
+    },
     "chargeSound": {
       "file": "SFX/placeholder-charge-loop.wav",
       "loop": true,
@@ -37,6 +42,14 @@
       "file": "SFX/placeholder-overcharge-loop.wav",
       "loop": true,
       "volume": 7
+    },
+    "transitionSound": {
+      "file": "SFX/placeholder-cue-punch.wav",
+      "volume": 2
+    },
+    "criticalVideoStartSound": {
+      "file": "SFX/placeholder-cue-punch-overcharge.wav",
+      "volume": 9
     },
     "phaseCues": {
       "chargeStart": {
@@ -70,6 +83,7 @@
     "resultVoiceSfx": {
       "normalCount": 10,
       "normalVolume": 3,
+      "criticalVideoNormalVolume": 3,
       "uniqueVolume": 2.25,
       "featuredVolume": 3,
       "featuredProbability": 0.25,

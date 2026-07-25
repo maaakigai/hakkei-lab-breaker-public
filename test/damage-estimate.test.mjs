@@ -9,6 +9,7 @@ import { loadConfigBundle } from "../src/main/appConfig.ts";
 import {
   damageYenFromPower,
   buildDamageEstimate,
+  buildCriticalEstimate,
 } from "../src/renderer/damageEstimate.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -91,4 +92,23 @@ test("buildDamageEstimate: 行数は maxLinesByLevel 以内・決定的", () => 
   assert.ok(lines.length <= REPORT.maxLinesByLevel[4], `lines=${lines.length}`);
   const again = buildDamageEstimate(40000000, 4, "S", REPORT);
   assert.deepEqual(lines, again);
+});
+
+test("buildCriticalEstimate: 大型電波塔bonusと研究室baseを別行で合計する", () => {
+  const base = 20_000_000;
+  const items = [{
+    label: "大型電波塔",
+    countLabel: "1基",
+    bonusDamageYen: 65_000_000_000,
+  }];
+  const lines = buildCriticalEstimate(base, items, REPORT.criticalLabInclusiveLabel);
+  assert.equal(sum(lines), 65_020_000_000);
+  assert.deepEqual(lines[0], {
+    label: "大型電波塔",
+    qtyLabel: "1基",
+    yen: 65_000_000_000,
+    kind: "building",
+  });
+  assert.equal(lines.at(-1).label, REPORT.criticalLabInclusiveLabel);
+  assert.equal(lines.at(-1).yen, base);
 });

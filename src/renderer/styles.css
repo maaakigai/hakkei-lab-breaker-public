@@ -51,14 +51,14 @@ body {
   z-index: -2;
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.18)),
-    url("images/lab-backgrounds/lab-main-front-16x9-privacy.png") center / cover no-repeat;
+    url("images/lab-backgrounds/lab-main-front-16x9.png") center / cover no-repeat;
 }
 
 .screen-Ready::before,
 .screen-Charge::before,
 .screen-HakkeiReady::before,
 .screen-ImpactDelay::before {
-  background: url("images/lab-backgrounds/lab-main-front-16x9-privacy.png") center / cover no-repeat;
+  background: url("images/lab-backgrounds/lab-main-front-16x9.png") center / cover no-repeat;
 }
 
 .screen::after {
@@ -1735,6 +1735,70 @@ button.quiet,
   text-shadow: 0 0 16px rgba(255, 72, 45, 0.86), 0 2px 8px rgba(0, 0, 0, 0.95);
 }
 
+.game-mode-indicators {
+  position: fixed;
+  top: clamp(9rem, 23vh, 12rem);
+  left: 50%;
+  z-index: 3;
+  display: grid;
+  gap: 0.45rem;
+  width: min(560px, 82vw);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.game-mode-indicator {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 4.15rem;
+  padding: 0.55rem 1.2rem;
+  border-top: 1px solid;
+  border-bottom: 1px solid;
+  font-weight: 950;
+  text-align: center;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
+}
+
+.game-mode-indicator span,
+.game-mode-indicator small {
+  display: block;
+}
+
+.game-mode-indicator span {
+  font-size: 1.12rem;
+}
+
+.game-mode-indicator small {
+  margin-top: 0.12rem;
+  font-size: 0.78rem;
+}
+
+.game-mode-indicator-critical {
+  color: #fff7da;
+  background:
+    linear-gradient(90deg, rgba(20, 12, 8, 0), rgba(38, 18, 10, 0.92) 12%, rgba(38, 18, 10, 0.92) 88%, rgba(20, 12, 8, 0)),
+    linear-gradient(180deg, rgba(255, 210, 96, 0.22), rgba(255, 42, 33, 0.16));
+  border-color: rgba(255, 92, 58, 0.78);
+  text-shadow: 0 0 14px rgba(255, 76, 52, 0.82), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.game-mode-indicator-critical small {
+  color: #ffe8b6;
+}
+
+.game-mode-indicator-assist {
+  color: #e9fdff;
+  background:
+    linear-gradient(90deg, rgba(5, 24, 28, 0), rgba(7, 45, 52, 0.92) 12%, rgba(7, 45, 52, 0.92) 88%, rgba(5, 24, 28, 0)),
+    linear-gradient(180deg, rgba(88, 236, 255, 0.24), rgba(20, 166, 190, 0.16));
+  border-color: rgba(94, 235, 255, 0.78);
+  text-shadow: 0 0 14px rgba(74, 225, 255, 0.82), 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.game-mode-indicator-assist small {
+  color: #bff8ff;
+}
+
 .impact {
   font-size: 5rem;
   letter-spacing: 0.4em;
@@ -1854,6 +1918,14 @@ button.quiet,
   font-size: clamp(2rem, 4.35vw, 4.8rem);
 }
 
+.result-focus-damage-critical {
+  color: #fff0b8;
+  text-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.96),
+    0 0 18px rgba(255, 42, 32, 0.78),
+    0 0 34px rgba(255, 166, 56, 0.52);
+}
+
 .result-focus-rank {
   display: inline-block;
   opacity: 0;
@@ -1872,6 +1944,23 @@ button.quiet,
     0 0 24px rgba(0, 0, 0, 0.34);
   transform-origin: center;
   animation: resultFocusIn 760ms cubic-bezier(0.16, 0.88, 0.22, 1) 1180ms both;
+}
+
+.result-critical {
+  display: block;
+  opacity: 0;
+  width: fit-content;
+  margin: 0.55rem auto -0.3rem;
+  padding: 0.1rem 0.85rem;
+  border: 1px solid rgba(255, 74, 52, 0.76);
+  border-radius: 6px;
+  color: #fff4d2;
+  background: rgba(122, 18, 14, 0.56);
+  font-size: clamp(1rem, 2.6vw, 1.55rem);
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 12px rgba(255, 74, 52, 0.92), 0 2px 8px rgba(0, 0, 0, 0.95);
+  animation: resultDetailIn 260ms ease-out 1120ms both;
 }
 
 .result-detail {
@@ -2701,7 +2790,7 @@ button.quiet,
 }
 
 .video-background-host.video-background-still {
-  background: url("images/lab-backgrounds/lab-main-front-16x9-privacy.png") center / cover no-repeat;
+  background: url("images/lab-backgrounds/lab-main-front-16x9.png") center / cover no-repeat;
 }
 
 .video-el {
@@ -2727,6 +2816,30 @@ button.quiet,
   max-width: none;
   border-radius: 0;
   object-fit: cover;
+}
+
+.critical-transition-wipe {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, #000 0%, #020206 86%, rgba(38, 42, 56, 0.94) 96%, rgba(255, 255, 255, 0.82) 100%);
+  clip-path: inset(0 100% 0 0);
+  animation: criticalTransitionWipe 720ms cubic-bezier(0.18, 0.82, 0.22, 1) both;
+}
+
+@keyframes criticalTransitionWipe {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  36%,
+  50% {
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 .result-background-host {

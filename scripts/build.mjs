@@ -52,13 +52,6 @@ const configs = [
     format: "iife",
     outfile: join(root, "dist/renderer/settings.js"),
   },
-  {
-    ...shared,
-    entryPoints: [join(root, "src/renderer/registered-users.ts")],
-    platform: "browser",
-    format: "iife",
-    outfile: join(root, "dist/renderer/registered-users.js"),
-  },
 ];
 
 async function copyStatic() {
@@ -70,8 +63,6 @@ async function copyStatic() {
     "styles.css",
     "settings.html",
     "settings.css",
-    "registered-users.html",
-    "registered-users.css",
   ]) {
     await cp(join(srcRenderer, f), join(distRenderer, f));
   }

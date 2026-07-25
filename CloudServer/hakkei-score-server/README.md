@@ -1,15 +1,15 @@
 # QR登録・ランキングサーバー
 
-`server.py`は、Electronアプリとスマートフォンの間でQR登録、セッション状態、プレイ結果、ランキングを同期するためのPythonサーバーです。ゲームロジック、スコア計算、mocopi入力処理はElectron側が担当します。
+`server.py`は、Electronアプリとスマートフォンの間でQR登録、セッション状態、プレイ結果、ランキングを同期する小規模な展示用サーバーです。ゲームロジック、スコア計算、mocopi入力処理はElectron側が担当します。
 
-同梱版は、標準でPC内の次のアドレスに待ち受けます。
+既定の待受先は次のとおりです。
 
-- ホスト: `127.0.0.1`
-- ポート: `45200`
 - HTTP: `http://127.0.0.1:45200`
 - WebSocket: `ws://127.0.0.1:45200/ws`
+- 主系: WebSocket
+- フォールバック: HTTP
 
-## ローカルで起動する
+## 起動
 
 ```bash
 cd CloudServer/hakkei-score-server
@@ -19,123 +19,134 @@ pip install -r requirements.txt
 python server.py
 ```
 
-起動後、ルートの`config/app.config.json`にある`remoteSession.httpBaseUrl`と`wsUrl`を上記のローカル接続先へ変更します。
+未指定時の実行時保存先は`data/submission-runtime/`です。合成初期データを収録する`data/`直下とは分離しており、`HAKKEI_DATA_DIR`へ`data/`自体を指定すると起動を拒否します。
 
-`127.0.0.1`はゲームPC自身からしか到達できません。スマートフォンでQR登録まで試す場合は、同一LANから到達可能なHTTPS/WSSリバースプロキシ、またはトンネルが必要です。
+Internetへ接続する運用では既定値に依存せず、旧展示データとは別のアクセス制限したディレクトリを明示してください。
 
-## 実行モードとデータ
+```bash
+sudo install -d -m 700 -o <service-user> -g <service-group> \
+  /srv/hakkei/private/submission-runtime
+export HAKKEI_DATA_DIR=/srv/hakkei/private/submission-runtime
+python server.py
+```
 
-通常モードでは、サーバーは必要に応じて`data/`以下へ次のファイルを作成します。
+## セッション契約
+
+QRには十分長く推測困難な`sessionId`を含む`/join?sessionId=...`を表示します。ゲーム、スマートフォン、サーバーは同じ`sessionId`で状態を共有します。
+
+展示版と同じ単純な契約へ戻しているため、次の認証機構はありません。
+
+- game token
+- join token
+- phone control token
+- session-open / session-release token
+- admin token
+- `PUBLIC_DEMO_MODE`
+
+`/ws?client=game|phone&sessionId=...`が主経路です。WebSocketが利用できない場合は同じ`sessionId`を使うHTTP APIへフォールバックします。
+
+## 永続データ
+
+実行時に次のファイルを`HAKKEI_DATA_DIR`へ原子的に保存します。
 
 - `session-entries.json`
-- `ranking-board.json`
 - `players.json`
+- `ranking-board.json`
 - `session-events.log`
 
-これらは登録名、スコア、セッション履歴を含む実行時データのためGit管理しません。リポジトリには、内容を空にした構造例だけを収録しています。
+実行時JSONとログは`.gitignore`対象です。リポジトリには`PLAYER 001`から`PLAYER 010`までの合成初期データだけを収録しています。
 
-- `session-entries.example.json`
-- `ranking-board.example.json`
-- `players.example.json`
+- `data/session-entries.example.json`
+- `data/players.example.json`
+- `data/ranking-board.example.json`
 
-この公開スナップショットは、`HAKKEI_MODE`未指定時も安全側の`public-demo`として起動します。インターネット向けのポートフォリオデモでは、設定を明示するため`HAKKEI_MODE=public-demo`を指定してください。このモードでは次のプライバシー保護を行います。
+3つの実行時JSONが1つも存在しない完全な初回起動時だけ、`players.example.json`と`ranking-board.example.json`を合成初期データとして読み込みます。いずれかの実行時JSONが存在する場合は既存データを優先し、初期データを再投入しません。実データや展示履歴を公開リポジトリへコピーしないでください。
 
-- `/api/ranking-board`と`/api/player-suggestions`は`public-demo-ranking.json`の合成データだけを返す
-- 体験者が送信したスコアは、そのゲームへの応答だけに匿名化して合成し、公開GETやランキングファイルへ保存しない
-- ニックネームとセッション状態は公開ランキングへ出さず、隔離した実行時ディレクトリへ既定15分、設定上も最大4時間だけ保持する。未登録のQR認証情報は5分で削除する
-- QRの個別状態取得と初回登録は参加トークン、登録後のスマートフォン操作は端末生成の制御トークン、ゲーム側のWebSocketとHTTPフォールバックはゲームトークンで認証する
-- スマートフォンではタブ単位の`sessionStorage`、Electronではプロセス内メモリだけに参加者情報を保持し、旧版の永続ランキングキャッシュを消去する
-- 公開デモではイベントログを生成しない
-- アクティブセッション、送信元ごとの更新頻度、レート制限用テーブル、WebSocket接続数・メッセージ頻度、HTTP/WebSocket本文サイズを固定上限内に収める
-- セッションAPIへ`Cache-Control: private, no-store`を付ける
+### 運用先へ反映する前のデータ分離
 
-主な環境変数は次のとおりです。
+旧版の`data/session-entries.json`、`data/players.json`、`data/ranking-board.json`がサーバー内に残っていても、提出版の実行時ディレクトリへ移動・コピーしないでください。旧データは非公開証拠としてアクセス制限した保全先へ残し、提出版には新規ディレクトリを使用します。
 
-```dotenv
-HAKKEI_MODE=public-demo
-HAKKEI_PUBLIC_SEED_FILE=/path/to/public-demo-ranking.json
-HAKKEI_SESSION_TTL_SECONDS=900
-HAKKEI_PUBLIC_MAX_ACTIVE_SESSIONS=128
-HAKKEI_ADMIN_TOKEN_FILE=/path/to/.admin-token
+systemdでは、サービスの環境変数として同じ保存先を指定します。
+
+```ini
+[Service]
+Environment=HAKKEI_DATA_DIR=/srv/hakkei/private/submission-runtime
+UMask=0077
 ```
 
-`HAKKEI_MODE`は空値、`persistent`、`public-demo`だけを受け付け、不明な値では起動しません。空値は`public-demo`として扱い、永続保存は`HAKKEI_MODE=persistent`を明示した場合だけ有効です。`.public-demo-mode`と`persistent`を同時指定すると起動を拒否します。公開デモのTTLは既定900秒、設定可能な上限は14,400秒です。未登録のゲーム・参加認証情報は300秒で削除します。保存先を解決済みの標準`public-demo-runtime/`へ固定し、`HAKKEI_DATA_DIR`による別ディレクトリ指定は拒否するため、設定ミスで通常データ、バックアップ、証拠保管先、親ディレクトリの権限やファイルを変更しません。アクティブセッション数は既定128件、設定可能範囲は1〜1,000件です。systemdでは環境変数に加えて`UMask=0077`を設定してください。サーバー自身も公開ランタイムを`0700`、作成ファイルを`0600`へ固定し、起動時と定期処理で期限切れデータを削除します。
+反映手順は次の順番で行います。
 
-サービス管理側で環境変数を設定できない場合に限り、`server.py`と同じディレクトリへGit管理外の`.public-demo-mode`を置くと、`public-demo-runtime/`を使う同じモードで起動します。この専用ランタイムはプロセス起動時に初期化されます。
+1. 前段プロキシからの新規受付と旧サービスを停止する。
+2. 旧プログラム、旧実行時データ、設定を非公開でバックアップし、保全コピーのSHA-256を確認する。
+3. 旧データと別の空ディレクトリを権限`0700`で作成し、`HAKKEI_DATA_DIR`へ設定する。
+4. 提出版を起動し、同じ環境変数で`manage.py list`を実行する。
+5. `dataDirectory`が新規ディレクトリであり、プレイヤー名が`PLAYER 001`から`PLAYER 010`までの10件だけであることを確認する。
+6. ループバックからランキング、QR登録、WebSocketを確認した後に前段プロキシを再開する。
 
-## 主なエンドポイント
-
-- `/join`、`/license`: スマートフォン用の登録・操作画面
-- `/api/session-open`: ゲームPCがランダムなゲーム認証情報でセッションを開始
-- `/api/session-entry`: QRからのセッション登録・個別状態取得
-- `/api/session-release`: スマートフォンが保持する端末別の制御トークンで現在の登録だけを解放。通常モードでは登録時に受け取る解放トークンを使用
-- `/api/session-ready`、`/api/session-cancel`: スマートフォン側の準備・キャンセル
-- `/api/player-suggestions`: 通常モードでは未プレイを含む登録名候補、公開デモモードでは合成候補
-- `/api/ranking-board`、`/api/ranking-score`: ランキング取得・更新
-- `/ws`: ゲームとスマートフォンへのリアルタイム通知
-
-公開デモモードでは、`POST /api/session-open`がゲームPCだけに64桁の`joinToken`を返します。QRには`#joinToken=...`というURLフラグメントで載せるため、トークンはHTTPやプロキシのURLログへ送られません。スマートフォン画面はフラグメントを`sessionStorage`へ退避してURLから消し、個別状態の取得と初回登録では`X-Hakkei-Join-Token`として提示します。
-
-スマートフォンは暗号学的乱数を使って端末別の`phoneControlToken`を生成し、同じタブの`sessionStorage`だけに保持します。サーバーはそのSHA-256ダイジェストだけをセッション状態へ保存します。同じプレイヤーの再登録、準備完了、キャンセル、結果画面終了、登録解放は`X-Hakkei-Phone-Control-Token`、スマートフォンWebSocketは`hakkei-phone-control.<phoneControlToken>`サブプロトコルを必要とします。したがって、同じQRを後から読み取った別端末は個別状態を閲覧できますが、登録済み端末の操作権限を取得できません。初回登録をどちらの端末が先に行うかという競合は防がないため、QRはプレイ開始時にその参加者へ提示してください。
-
-スマートフォンのニックネーム情報も公開デモでは`sessionStorage`だけを使用し、旧版が`localStorage`へ残した値は画面起動時に削除します。ゲームPCの個別セッションGETとHTTPフォールバックは`X-Hakkei-Game-Token`が必要です。通常モードでは従来クライアントとの互換性を維持します。
-
-`/api/session-entries`、`/api/players`、`DELETE /api/session-entry`は管理トークンが必要です。通常モードの公開ランキングはニックネーム、公開用プレイヤー番号、ハイスコア、プレイ回数、登録日時、最終プレイ日時を返します。公開デモモードでは、これらの項目をすべて合成人物の固定データへ置き換えます。登録名候補APIも内部プレイヤーIDやセッションIDを返しません。個別スコア記録は公開しません。
-
-ランキングはオリジナル展示版と同じく、破壊映像の再生中に先行して同期します。QR登録時はゲーム認証と登録プレイヤーの一致を確認し、Result画面へ入った時点でスマートフォンへ結果を通知します。展示機で名前を手入力した場合も、同じゲーム認証を確認したうえで共有ランキングへ保存します。公開用プレイヤー番号がある場合は既存プレイヤーへ統合し、同じ結果の再送は重複登録されません。
-
-## 共有デモサーバー
-
-公開版の`release.bat`は、プロジェクトの共有HTTPS/WSSデモサーバーへ接続する設定です。共有サーバーは公開デモモードで運用し、展示当日の実ユーザー、ランキング、セッション履歴を読み込みません。公開ランキングと登録名候補は合成データです。
-
-新しい体験者のニックネームは現在のデモセッションにだけ使用し、公開ランキングには表示しません。共有サーバーの一時状態は既定15分、設定上も最大4時間、未登録のQR認証情報は5分で削除します。スマートフォン側はそのタブ、Electron側はそのプロセスの存続中だけ保持します。送信スコアは、そのゲームへの応答に限って`DEMO_###`の匿名名で表示し、後の公開APIアクセスからは取得できません。この説明はスマートフォンの登録画面にも表示します。
-
-## 管理API
-
-`/api/admin-reset`は、サーバープロセスに`HAKKEI_ADMIN_TOKEN`が設定されていない場合は無効です。systemdの環境変数を変更しにくい場合は、`data/.admin-token`から読み込むこともできます。そのファイルは`0600`相当の権限で保護してください。
-
-Electronの設定画面からサーバー全体をリセットする場合や、`registered-users.bat`で管理一覧を開く場合も、同じ値をElectronプロセスへ渡す必要があります。確認文字列`DELETE_ALL_HAKKEI_DATA`は誤操作防止用であり、管理トークンの代わりではありません。公開リポジトリにはトークンを収録していないため、許可する管理PCごとに環境変数を設定してください。
-
-### 管理トークンを新しく作る
-
-管理PCのPowerShellで暗号学的乱数32バイトから64文字のトークンを生成します。
-
-```powershell
-$tokenBytes = New-Object byte[] 32
-$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-$rng.GetBytes($tokenBytes)
-$rng.Dispose()
-$adminToken = [BitConverter]::ToString($tokenBytes).Replace("-", "").ToLowerInvariant()
+```bash
+HAKKEI_DATA_DIR=/srv/hakkei/private/submission-runtime \
+  python manage.py list
 ```
 
-`$adminToken`はパスワードと同じ秘密情報です。README、Git、Issue、チャット、スクリーンショットへ貼り付けないでください。
+`manage.py`へサービスと異なる`HAKKEI_DATA_DIR`を渡すと別データを操作するため、常にsystemdと同じ値を使用してください。
+プログラム更新用のコピーや`rsync --delete`には実行時ディレクトリを含めず、コード更新と保存データ管理を分離してください。
 
-### サーバーと管理PCへ設定する
+## 公開API
 
-管理PCからSSHの標準入力経由でサーバーへ渡すと、トークンを画面やコマンド引数へ表示せず、`data/.admin-token`へ原子的に配置できます。
+- `GET /join`、`GET /license`: スマートフォン画面
+- `POST /api/session-entry`: ニックネーム登録
+- `GET /api/session-entry?sessionId=...`: 当該セッション状態
+- `POST /api/session-ready`、`POST /api/session-cancel`
+- `POST /api/session-input-check`、`POST /api/session-input-ready`、`POST /api/session-input-exit`
+- `POST /api/session-result`、`POST /api/session-result-exit`
+- `GET /api/player-suggestions`
+- `GET /api/ranking-board`、`POST /api/ranking-score`
+- `GET /ws`
 
-```powershell
-$server = "<ssh-user>@<server-host>"
-$tokenPath = "/path/to/hakkei-score-server/data/.admin-token"
+ランキングと候補APIが返すプレイヤー項目は次の6フィールドです。
 
-$adminToken | ssh $server "umask 077; tr -d '\r\n' > '${tokenPath}.new' && chmod 600 '${tokenPath}.new' && mv '${tokenPath}.new' '$tokenPath'"
+- `nickname`
+- `playerNumber`
+- `registeredAtMs`
+- `lastPlayedAtMs`
+- `highScore`
+- `playCount`
 
-[Environment]::SetEnvironmentVariable(
-  "HAKKEI_ADMIN_TOKEN",
-  $adminToken,
-  "User"
-)
+ランキングAPIだけは、ハイスコアを出した回の表示用Critical加算として`highScoreCriticalBonusYen`も返します。これは非負整数の10進文字列です。候補APIには含めません。内部`playerId`、セッション一覧、個別スコア記録は公開しません。
 
-Remove-Variable adminToken, tokenBytes, rng, tokenPath
-ssh -t $server "sudo systemctl restart <score-server-service-name>"
-Remove-Variable server
+次の管理・削除HTTP APIは実装せず、アクセスしても404です。
+
+- 全データreset
+- 全セッション一覧
+- private player一覧
+- セッションまたはプレイヤーの削除
+
+管理は、SSH接続後にサーバー内で`manage.py`を直接実行します。HTTP管理APIと管理Web UIはありません。
+
+```bash
+# 非公開playerIdを含むサーバー内一覧
+python manage.py list
+
+# 1名と、そのランキング記録・セッションを削除
+python manage.py delete-player remote-example-id --confirm DELETE_PLAYER_DATA
+
+# 全ランタイムデータとイベントログを空にする
+python manage.py reset --confirm DELETE_ALL_HAKKEI_DATA
 ```
 
-`Settings.bat`と`registered-users.bat`は、プロセス環境にトークンがなければこのユーザー環境変数を読み込みます。`npm run settings`を既に開いていたターミナルから直接実行する場合は、ターミナルを開き直してください。
+`delete-player`と`reset`は書き込みを行うため、前段プロキシからの新規受付とサーバープロセスを停止し、対象データディレクトリのバックアップを作成してから実行してください。`reset`後は空のJSONを残すため、合成初期データが勝手に再投入されることはありません。
 
-トークンを作り直す場合は、サーバーと許可済み管理PCの両方を同じ新しい値へ更新します。古い値は更新後に利用できなくなります。サービス再起動では進行中のQRセッション認証も消えるため、プレイ中の利用者がいない時間に行ってください。トークンはサービスの環境変数または保護した環境ファイルに保存し、リポジトリへ登録しないでください。
+## ランキング計算
 
-## サーバーテスト
+wire上の`record.score`は互換性のため残した名前で、意味は`baseDamageYen`です。`record.baseDamageYen`を併記する場合は同じ値でなければ拒否します。
+
+Criticalの金額は`criticalBonusYen`へ別に保存し、`damageYen = baseDamageYen + criticalBonusYen`を検証します。ランキング順と`highScore`にはbaseだけを使い、Criticalボーナスを加えません。同じプレイヤー、プレイ日時、base、総額、Criticalボーナス、ランク、動画レベルの再送は1件として扱います。
+
+## イベントログ
+
+`session-events.log`はサーバー内の運用確認用です。ニックネーム、`playerName`、HTTP request body、payloadは記録しません。HTTPアクセスログはサーバー本体では無効です。
+
+## テスト
 
 ```bash
 cd CloudServer/hakkei-score-server
@@ -143,17 +154,8 @@ pip install -r requirements.txt
 python -m unittest -v test_server.py
 ```
 
-テストでは、管理一覧と削除の認証、本人セッションだけの解放、ゲーム認証、QR登録プレイヤーとの一致、動画中のランキング先行同期、手入力スコアの既存プレイヤーへの統合、再送時の重複防止、公開応答からの内部情報除外を確認します。加えて、公開デモモードで実データファイルを読み書きせず、合成データだけを返すこと、イベントログを生成しないこと、参加トークンだけでは登録後の操作やスマートフォンWebSocketを使えないこと、制御トークンを平文保存しないこと、セッション・レート・接続数・本文サイズの上限を確認します。2026年7月25日の提出前確認では23件すべて成功しました。
+テストでは、初回の合成データ投入と再投入防止、永続化、WebSocket主系とHTTPフォールバック、入力サイズとschema、ランキング再送の冪等性、Criticalを順位へ加えないこと、公開応答のfield制限、管理・削除HTTP APIの404、サーバーローカル管理、ログの非記録項目を確認します。
 
-## 公開運用時の注意
+## Internetへ接続する場合
 
-このサーバーは展示・デモ向けの小規模な実装です。公開デモモードでは`/api/session-open`を送信元ごとに毎分12回、全送信元合計で毎分6回に制限し、IPv6は送信元を`/64`単位で集約します。アクティブセッションは既定128件、WebSocketは全体256接続かつ1セッション2接続までとし、ほかのREST/WebSocketハンドシェイク、メッセージ頻度、本文サイズにも固定上限があります。`CF-Connecting-IP`はaiohttpへの直接接続元がloopbackの場合だけ参照するため、前段プロキシは外部から受け取った同名ヘッダーをそのまま転送せず、信頼できる接続情報で上書きするか削除してください。
-
-`/api/session-open`自体は配備秘密情報を要求しないため、多数の分散送信元による可用性攻撃を完全には防ぎません。インターネットへ公開する場合は、用途に応じて次も用意してください。
-
-- HTTPS/WSSのTLS終端
-- 前段プロキシまたはCDNでの追加レート制限、オリジン到達元の制限
-- 通常モードで個人データを保持する場合の保存期間、アクセス制御、バックアップ方針
-- ログ監視とプロセス監視
-
-公開環境固有のCloudflare Tunnel設定、ドメイン設定、認証情報、実ユーザーデータは、このリポジトリには含めていません。
+この契約では`sessionId`以外の認証情報を使用しません。公開する場合は、十分長いランダムなsessionId、HTTPS/WSS、前段プロキシでのrate limit、オリジン到達元の制限、保存期間とバックアップ方針を用意してください。実行時データ、バックアップ、展示証拠はWeb公開ディレクトリの外に置いてください。

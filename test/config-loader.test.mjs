@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadConfigBundle } from "../src/main/appConfig.ts";
+import { loadConfigBundle, validateCriticalConfig } from "../src/main/appConfig.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const realConfig = join(root, "config");
@@ -20,6 +20,7 @@ test("正規の config/*.json は valid で bundle を返す (M4-01/02/03)", () 
     assert.equal(res.value.loadedAtMs, 12345);
     assert.equal(res.value.runtime.uiMode, "release");
     assert.equal(res.value.runtime.localMode, false);
+    assert.equal(res.value.runtime.demoQr, false);
     assert.equal(res.value.input.udp.requireSeq, true); // M4-02
     assert.equal(res.value.input.udp.maxDatagramBytes, 8192);
     assert.equal(res.value.input.inputCheck.mocopiBleReadyPolicy, "recent-only");
@@ -37,12 +38,16 @@ test("正規の config/*.json は valid で bundle を返す (M4-01/02/03)", () 
     assert.equal(res.value.app.audio.bgm.loop, true);
     assert.equal(res.value.app.audio.bgm.autoplay, true);
     assert.ok(res.value.app.audio.bgm.volume >= 0 && res.value.app.audio.bgm.volume <= 3);
+    assert.equal(res.value.app.audio.criticalBgm.file, "BGM/placeholder-main-loop.wav");
+    assert.equal(res.value.app.audio.criticalBgm.loop, true);
     assert.equal(res.value.app.audio.chargeSound.file, "SFX/placeholder-charge-loop.wav");
     assert.equal(res.value.app.audio.chargeSound.loop, true);
     assert.ok(res.value.app.audio.chargeSound.volume >= 0 && res.value.app.audio.chargeSound.volume <= 10);
     assert.equal(res.value.app.audio.overchargeSound.file, "SFX/placeholder-overcharge-loop.wav");
     assert.equal(res.value.app.audio.overchargeSound.loop, true);
     assert.ok(res.value.app.audio.overchargeSound.volume >= 0 && res.value.app.audio.overchargeSound.volume <= 10);
+    assert.equal(res.value.app.audio.transitionSound.file, "SFX/placeholder-cue-punch.wav");
+    assert.equal(res.value.app.audio.criticalVideoStartSound.file, "SFX/placeholder-cue-punch-overcharge.wav");
     assert.equal(res.value.app.audio.resultVoiceSfx.normalCount, 10);
     assert.equal(res.value.app.audio.resultVoiceSfx.normalVolume, 3);
     assert.equal(res.value.app.audio.resultVoiceSfx.uniqueVolume, 2.25);
@@ -55,6 +60,7 @@ test("正規の config/*.json は valid で bundle を返す (M4-01/02/03)", () 
     assert.ok(res.value.score.punch.intensityThresholdKeyboard > 0);
     assert.ok(res.value.score.punch.intensityThresholdBle > 0);
     assert.ok(res.value.score.punch.chargeNoiseFloor >= 0);
+    assert.equal(res.value.score.punch.participantAssistChargeReadyThreshold, 6000);
     assert.ok(res.value.score.punch.cooldownMs >= 0);
     assert.equal(res.value.score.outcomes.forward.scoreVisible, true);
     assert.deepEqual(res.value.score.outcomes.forward.video, { kind: "powerLevel" });
@@ -65,15 +71,36 @@ test("正規の config/*.json は valid で bundle を返す (M4-01/02/03)", () 
     assert.ok(res.value.score.resultDamageReport.maxLinesByLevel.length >= 6);
     assert.ok(res.value.score.power.damageCurve.maxYen > 0);
     assert.ok(res.value.score.power.damageCurve.maxPower > res.value.score.power.damageCurve.deadZonePower);
+    assert.equal(res.value.critical.defaultOutcomeId, "radio-tower");
+    assert.equal(res.value.critical.outcomes.length, 1);
+    assert.deepEqual(res.value.critical.outcomes[0], {
+      id: "radio-tower",
+      label: "大型電波塔",
+      weight: 1,
+      videoFile: "CriticalVideo/critical-radio-tower.mp4",
+      damageItems: [{
+        label: "大型電波塔",
+        countLabel: "1基",
+        bonusDamageYen: 65_000_000_000,
+      }],
+    });
   }
 });
 
-test("runtime のUI/local modeは config JSON ではなく起動側から bundle に入る", () => {
-  const res = loadConfigBundle(realConfig, 12345, { uiMode: "debug", localMode: true });
+test("critical outcomeが2件以上なら応募版契約違反としてCONFIG_INVALID", () => {
+  const loaded = loadConfigBundle(realConfig, 0);
+  const critical = JSON.parse(JSON.stringify(loaded.ok ? loaded.value.critical : {}));
+  critical.outcomes.push({ ...critical.outcomes[0], id: "second-outcome" });
+  assert.throws(() => validateCriticalConfig(critical), /exactly one/);
+});
+
+test("runtime のUI/local/demo QR modeは config JSON ではなく起動側から bundle に入る", () => {
+  const res = loadConfigBundle(realConfig, 12345, { uiMode: "debug", localMode: true, demoQr: true });
   assert.equal(res.ok, true);
   if (res.ok) {
     assert.equal(res.value.runtime.uiMode, "debug");
     assert.equal(res.value.runtime.localMode, true);
+    assert.equal(res.value.runtime.demoQr, true);
     assert.equal(res.value.app.defaultInputMode, "keyboard");
   }
 });

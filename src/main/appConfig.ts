@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type {
   AppConfig,
   AppConfigBundle,
+  CriticalConfig,
   InputConfig,
   ScoreConfig,
 } from "../shared/configTypes.ts";
@@ -131,6 +132,19 @@ function validateSafeImagePath(value: unknown, where: string): void {
   }
 }
 
+function validateDamageYenValue(value: unknown, where: string): void {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) {
+      fail(`${where} must be >= 0`);
+    }
+    return;
+  }
+  if (typeof value === "string" && /^[0-9]+$/.test(value)) {
+    return;
+  }
+  fail(`${where} must be a non-negative number or integer string`);
+}
+
 function listVideoFolderFiles(projectRoot: string, folder: string, where: string): string[] {
   try {
     const files = readdirSync(join(projectRoot, "assets", "videos", folder), { withFileTypes: true })
@@ -219,6 +233,15 @@ export function validateApp(raw: unknown): AppConfig {
   if (bgm.autoplay !== true) {
     fail("app.config.audio.bgm.autoplay must be true");
   }
+  const criticalBgm = obj(audio.criticalBgm, "app.config.audio.criticalBgm");
+  validateSafeAudioPath(criticalBgm.file, "app.config.audio.criticalBgm.file");
+  if (criticalBgm.loop !== true) {
+    fail("app.config.audio.criticalBgm.loop must be true");
+  }
+  const criticalVolume = num(criticalBgm, "volume", "app.config.audio.criticalBgm");
+  if (criticalVolume < 0 || criticalVolume > 3) {
+    fail("app.config.audio.criticalBgm.volume must be in [0, 3]");
+  }
   const chargeSound = obj(audio.chargeSound, "app.config.audio.chargeSound");
   validateSafeAudioPath(chargeSound.file, "app.config.audio.chargeSound.file");
   if (chargeSound.loop !== true) {
@@ -236,6 +259,18 @@ export function validateApp(raw: unknown): AppConfig {
   const overchargeVolume = num(overchargeSound, "volume", "app.config.audio.overchargeSound");
   if (overchargeVolume < 0 || overchargeVolume > 10) {
     fail("app.config.audio.overchargeSound.volume must be in [0, 10]");
+  }
+  const transitionSound = obj(audio.transitionSound, "app.config.audio.transitionSound");
+  validateSafeAudioPath(transitionSound.file, "app.config.audio.transitionSound.file");
+  const transitionVolume = num(transitionSound, "volume", "app.config.audio.transitionSound");
+  if (transitionVolume < 0 || transitionVolume > 10) {
+    fail("app.config.audio.transitionSound.volume must be in [0, 10]");
+  }
+  const criticalVideoStartSound = obj(audio.criticalVideoStartSound, "app.config.audio.criticalVideoStartSound");
+  validateSafeAudioPath(criticalVideoStartSound.file, "app.config.audio.criticalVideoStartSound.file");
+  const criticalVideoStartVolume = num(criticalVideoStartSound, "volume", "app.config.audio.criticalVideoStartSound");
+  if (criticalVideoStartVolume < 0 || criticalVideoStartVolume > 10) {
+    fail("app.config.audio.criticalVideoStartSound.volume must be in [0, 10]");
   }
   const phaseCues = obj(audio.phaseCues, "app.config.audio.phaseCues");
   for (const key of ["chargeStart", "stance", "stanceOvercharge", "punch", "punchOvercharge"] as const) {
@@ -276,7 +311,7 @@ export function validateApp(raw: unknown): AppConfig {
   if (reconnectMaxMs < reconnectMinMs) {
     fail("app.config.remoteSession.reconnectMaxMs must be >= reconnectMinMs");
   }
-  for (const key of ["normalVolume", "uniqueVolume", "featuredVolume"] as const) {
+  for (const key of ["normalVolume", "criticalVideoNormalVolume", "uniqueVolume", "featuredVolume"] as const) {
     const value = num(resultVoiceSfx, key, "app.config.audio.resultVoiceSfx");
     if (value < 0 || value > 10) {
       fail(`app.config.audio.resultVoiceSfx.${key} must be in [0, 10]`);
@@ -453,6 +488,7 @@ export function validateScoreConfig(raw: unknown): ScoreConfig {
   for (const k of [
     "chargeNoiseFloor",
     "chargeReadyThreshold",
+    "participantAssistChargeReadyThreshold",
     "chargeReadyThresholdKeyboard",
     "cooldownMs",
   ]) {
@@ -462,6 +498,9 @@ export function validateScoreConfig(raw: unknown): ScoreConfig {
   }
   if (num(punch, "chargeMaxKeyboard", "score.config.punch") <= 0) {
     fail("score.config.punch.chargeMaxKeyboard must be > 0");
+  }
+  if (num(punch, "participantAssistChargeReadyThreshold", "score.config.punch") <= 0) {
+    fail("score.config.punch.participantAssistChargeReadyThreshold must be > 0");
   }
   // スコア用チャージ曲線（割合基準ロジスティック）。width は分母なので > 0 必須。
   for (const k of ["chargeScoreMid", "chargeScoreWidth"]) {
@@ -583,7 +622,7 @@ export function validateScoreConfig(raw: unknown): ScoreConfig {
     fail("score.config.resultDamageReport.reserveRatio must be within [0, 0.9]");
   }
   num(resultDamageReport, "reconcileHighLevel", "score.config.resultDamageReport");
-  for (const key of ["reconcileLabel", "reconcileLabelHigh"]) {
+  for (const key of ["reconcileLabel", "reconcileLabelHigh", "criticalLabInclusiveLabel"]) {
     if (typeof resultDamageReport[key] !== "string" || (resultDamageReport[key] as string).length === 0) {
       fail(`score.config.resultDamageReport.${key} must be a non-empty string`);
     }
@@ -662,10 +701,80 @@ function hydrateVideoLevelFolders(score: ScoreConfig, projectRoot: string): Scor
   };
 }
 
+export function validateCriticalConfig(raw: unknown): CriticalConfig {
+  const r = obj(raw, "critical.config");
+  expectSchemaV1(r, "critical.config");
+  if (typeof r.enabled !== "boolean") {
+    fail("critical.config.enabled must be boolean");
+  }
+  const baseRateOnSRank = num(r, "baseRateOnSRank", "critical.config");
+  if (baseRateOnSRank < 0 || baseRateOnSRank > 1) {
+    fail("critical.config.baseRateOnSRank must be in [0, 1]");
+  }
+  const maxRateOnSRank = num(r, "maxRateOnSRank", "critical.config");
+  if (maxRateOnSRank < 0 || maxRateOnSRank > 1) {
+    fail("critical.config.maxRateOnSRank must be in [0, 1]");
+  }
+  if (maxRateOnSRank < baseRateOnSRank) {
+    fail("critical.config.maxRateOnSRank must be >= baseRateOnSRank");
+  }
+  if (num(r, "rateGamma", "critical.config") <= 0) {
+    fail("critical.config.rateGamma must be > 0");
+  }
+  if (typeof r.defaultOutcomeId !== "string" || r.defaultOutcomeId.length === 0) {
+    fail("critical.config.defaultOutcomeId must be a non-empty string");
+  }
+  if (!Array.isArray(r.outcomes) || r.outcomes.length !== 1) {
+    fail("critical.config.outcomes must contain exactly one portfolio-safe outcome");
+  }
+  let hasDefault = false;
+  const seenIds = new Set<string>();
+  for (const rawOutcome of r.outcomes) {
+    const outcome = obj(rawOutcome, "critical.config.outcomes[]");
+    if (typeof outcome.id !== "string" || outcome.id.length === 0) {
+      fail("critical.config.outcomes[].id must be a non-empty string");
+    }
+    if (seenIds.has(outcome.id)) {
+      fail("critical.config.outcomes[].id must be unique");
+    }
+    seenIds.add(outcome.id);
+    if (outcome.id === r.defaultOutcomeId) {
+      hasDefault = true;
+    }
+    if (typeof outcome.label !== "string" || outcome.label.length === 0) {
+      fail("critical.config.outcomes[].label must be a non-empty string");
+    }
+    if (num(outcome, "weight", "critical.config.outcomes[]") <= 0) {
+      fail("critical.config.outcomes[].weight must be > 0");
+    }
+    validateSafeVideoPath(outcome.videoFile, "critical.config.outcomes[].videoFile");
+    if (outcome.labVideoFile !== undefined) {
+      validateSafeVideoPath(outcome.labVideoFile, "critical.config.outcomes[].labVideoFile");
+    }
+    if (!Array.isArray(outcome.damageItems) || outcome.damageItems.length === 0) {
+      fail("critical.config.outcomes[].damageItems must be a non-empty array");
+    }
+    for (const rawItem of outcome.damageItems) {
+      const item = obj(rawItem, "critical.config.outcomes[].damageItems[]");
+      if (typeof item.label !== "string" || item.label.length === 0) {
+        fail("critical.config.outcomes[].damageItems[].label must be a non-empty string");
+      }
+      if (typeof item.countLabel !== "string" || item.countLabel.length === 0) {
+        fail("critical.config.outcomes[].damageItems[].countLabel must be a non-empty string");
+      }
+      validateDamageYenValue(item.bonusDamageYen, "critical.config.outcomes[].damageItems[].bonusDamageYen");
+    }
+  }
+  if (!hasDefault) {
+    fail("critical.config.defaultOutcomeId must match one of critical.config.outcomes[].id");
+  }
+  return r as unknown as CriticalConfig;
+}
+
 export function loadConfigBundle(
   configDir: string,
   loadedAtMs: number,
-  runtime: AppConfigBundle["runtime"] = { uiMode: "release", localMode: false },
+  runtime: AppConfigBundle["runtime"] = { uiMode: "release", localMode: false, demoQr: false },
 ): IpcResult<AppConfigBundle> {
   try {
     const readJson = (file: string): unknown => {
@@ -681,6 +790,7 @@ export function loadConfigBundle(
     const input = validateInput(readJson("input.config.json"));
     const projectRoot = join(configDir, "..");
     const score = hydrateVideoLevelFolders(validateScoreConfig(readJson("score.config.json")), projectRoot);
+    const critical = validateCriticalConfig(readJson("critical.config.json"));
 
     return {
       ok: true,
@@ -691,10 +801,12 @@ export function loadConfigBundle(
         app,
         input,
         score,
+        critical,
         sourcePaths: {
           app: "config/app.config.json",
           input: "config/input.config.json",
           score: "config/score.config.json",
+          critical: "config/critical.config.json",
         },
       },
     };

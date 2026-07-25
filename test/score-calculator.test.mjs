@@ -9,6 +9,7 @@ import {
   selectRank,
   selectVideoLevel,
   buildScoreBreakdown,
+  criticalRateForPower,
   ScoreInvalidError,
 } from "../src/renderer/scoreCalculator.ts";
 import { loadConfigBundle } from "../src/main/appConfig.ts";
@@ -90,6 +91,23 @@ test("buildScoreBreakdown: damageYen=Lvアンカー補間(power由来) (M3-04)",
   assert.equal(b.damageYen, damageYenFromPower(1_000_000, SCORE_CONFIG.power));
   assert.equal(b.rank, "S");
   assert.equal(b.videoLevel, 5);
+});
+
+test("criticalRateForPower: S帯のbaseから最大powerのmaxまで単調増加する", () => {
+  const opts = {
+    sThreshold: 565_000,
+    maxPower: 780_000,
+    baseRate: 0.25,
+    maxRate: 0.75,
+    gamma: 1.5,
+  };
+  assert.equal(criticalRateForPower(opts.sThreshold, opts), opts.baseRate);
+  assert.equal(criticalRateForPower(opts.maxPower, opts), opts.maxRate);
+  assert.equal(criticalRateForPower(0, opts), opts.baseRate);
+  assert.equal(criticalRateForPower(2_000_000, opts), opts.maxRate);
+  const middle = criticalRateForPower((opts.sThreshold + opts.maxPower) / 2, opts);
+  assert.ok(middle > opts.baseRate && middle < opts.maxRate);
+  assert.ok(criticalRateForPower(740_000, opts) > criticalRateForPower(620_000, opts));
 });
 
 test("単手モデル: 単手チャージを両因子へ与えると power>0・Lv>0（§0.23回帰）", () => {

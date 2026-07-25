@@ -1,4 +1,15 @@
 {
   "schemaVersion": 1,
-  "players": []
+  "players": [
+    {"playerId": "remote-fixture-001", "nickname": "PLAYER 001", "playerNumber": 26001, "registeredAtMs": 1767225600000, "lastSeenAtMs": 1767226200000},
+    {"playerId": "remote-fixture-002", "nickname": "PLAYER 002", "playerNumber": 26002, "registeredAtMs": 1767225660000, "lastSeenAtMs": 1767226260000},
+    {"playerId": "remote-fixture-003", "nickname": "PLAYER 003", "playerNumber": 26003, "registeredAtMs": 1767225720000, "lastSeenAtMs": 1767226320000},
+    {"playerId": "remote-fixture-004", "nickname": "PLAYER 004", "playerNumber": 26004, "registeredAtMs": 1767225780000, "lastSeenAtMs": 1767226380000},
+    {"playerId": "remote-fixture-005", "nickname": "PLAYER 005", "playerNumber": 26005, "registeredAtMs": 1767225840000, "lastSeenAtMs": 1767226440000},
+    {"playerId": "remote-fixture-006", "nickname": "PLAYER 006", "playerNumber": 26006, "registeredAtMs": 1767225900000, "lastSeenAtMs": 1767226500000},
+    {"playerId": "remote-fixture-007", "nickname": "PLAYER 007", "playerNumber": 26007, "registeredAtMs": 1767225960000, "lastSeenAtMs": 1767226560000},
+    {"playerId": "remote-fixture-008", "nickname": "PLAYER 008", "playerNumber": 26008, "registeredAtMs": 1767226020000, "lastSeenAtMs": 1767226620000},
+    {"playerId": "remote-fixture-009", "nickname": "PLAYER 009", "playerNumber": 26009, "registeredAtMs": 1767226080000, "lastSeenAtMs": 1767226680000},
+    {"playerId": "remote-fixture-010", "nickname": "PLAYER 010", "playerNumber": 26010, "registeredAtMs": 1767226140000, "lastSeenAtMs": 1767226740000}
+  ]
 }

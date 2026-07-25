@@ -1,9 +1,8 @@
 import type { RemoteHttpRequest, RemoteHttpResponse } from "../shared/types.ts";
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
-const GAME_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
 const GET_WITHOUT_QUERY = new Set(["/api/ranking-board", "/api/player-suggestions"]);
-const POST_WITH_BODY = new Set(["/api/session-open", "/api/session-result", "/api/ranking-score"]);
+const POST_WITH_BODY = new Set(["/api/session-result", "/api/ranking-score"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -13,10 +12,6 @@ function validSessionId(value: unknown): value is string {
   return typeof value === "string" && SESSION_ID_PATTERN.test(value);
 }
 
-function validGameToken(value: unknown): value is string {
-  return typeof value === "string" && GAME_TOKEN_PATTERN.test(value);
-}
-
 export function validateRemoteHttpRequest(value: unknown): value is RemoteHttpRequest {
   if (!isRecord(value) || (value.method !== "GET" && value.method !== "POST") || typeof value.path !== "string") {
     return false;
@@ -24,15 +19,13 @@ export function validateRemoteHttpRequest(value: unknown): value is RemoteHttpRe
   if (value.method === "GET" && GET_WITHOUT_QUERY.has(value.path)) {
     return (
       value.query === undefined &&
-      value.body === undefined &&
-      value.gameToken === undefined
+      value.body === undefined
     );
   }
   if (value.method === "GET" && value.path === "/api/session-entry") {
     return (
       isRecord(value.query) &&
       validSessionId(value.query.sessionId) &&
-      validGameToken(value.gameToken) &&
       value.body === undefined
     );
   }
@@ -40,7 +33,6 @@ export function validateRemoteHttpRequest(value: unknown): value is RemoteHttpRe
     return (
       isRecord(value.query) &&
       validSessionId(value.query.sessionId) &&
-      validGameToken(value.gameToken) &&
       (value.query.ready === undefined || typeof value.query.ready === "boolean") &&
       value.body === undefined
     );
@@ -49,7 +41,6 @@ export function validateRemoteHttpRequest(value: unknown): value is RemoteHttpRe
     return (
       isRecord(value.query) &&
       validSessionId(value.query.sessionId) &&
-      validGameToken(value.gameToken) &&
       (value.query.play === undefined || typeof value.query.play === "boolean") &&
       value.body === undefined
     );
@@ -58,8 +49,7 @@ export function validateRemoteHttpRequest(value: unknown): value is RemoteHttpRe
     value.method === "POST" &&
     POST_WITH_BODY.has(value.path) &&
     isRecord(value.body) &&
-    value.query === undefined &&
-    value.gameToken === undefined
+    value.query === undefined
   );
 }
 
@@ -85,9 +75,6 @@ export async function performRemoteHttpRequest(
   const headers: Record<string, string> = {};
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
-  }
-  if ("gameToken" in request) {
-    headers["X-Hakkei-Game-Token"] = request.gameToken;
   }
   const response = await fetch(url, {
     method: request.method,

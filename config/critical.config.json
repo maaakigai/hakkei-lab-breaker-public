@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "baseRateOnSRank": 0.25,
+  "maxRateOnSRank": 0.75,
+  "rateGamma": 1.5,
+  "defaultOutcomeId": "radio-tower",
+  "outcomes": [
+    {
+      "id": "radio-tower",
+      "label": "大型電波塔",
+      "weight": 1,
+      "videoFile": "CriticalVideo/critical-radio-tower.mp4",
+      "damageItems": [
+        {
+          "label": "大型電波塔",
+          "countLabel": "1基",
+          "bonusDamageYen": 65000000000
+        }
+      ]
+    }
+  ]
+}

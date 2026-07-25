@@ -22,10 +22,6 @@ unity-bridge/UserSettings/
 .claude/settings.local.json
 .codex/
 
-# Local public-demo switch and short-lived session data
-CloudServer/hakkei-score-server/.public-demo-mode
-CloudServer/hakkei-score-server/public-demo-runtime/
-
 # mocopi BLE 生キャプチャ録画（ローカル。tools/ で再生成・replay はローカル運用）
 ble-*.csv
 tools/__pycache__/

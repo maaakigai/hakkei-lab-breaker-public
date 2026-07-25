@@ -1,9 +1,7 @@
 import type {
   PublicPlayerSuggestion,
   Rank,
-  RegisteredSessionEntry,
   ScoreBreakdown,
-  ServerPlayerProfile,
   VideoLevel,
 } from "../shared/types.ts";
 
@@ -13,7 +11,8 @@ export type PlayerProfile = {
   playerNumber?: number | null;
   registeredAtMs: number;
   lastPlayedAtMs: number | null;
-  highScore: number;
+  highScore: number; // 競技スコアは研究室の baseDamageYen のみ
+  highScoreCriticalBonusYen: string; // 表示専用。highScore を出した回の Critical bonus
   playCount: number;
 };
 
@@ -23,6 +22,7 @@ export type ScoreRecord = {
   nickname: string;
   score: number;
   damageYen: number;
+  criticalBonusYen: string;
   rank: Rank;
   videoLevel: VideoLevel;
   playedAtMs: number;
@@ -48,24 +48,9 @@ export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const STORAGE_KEY = "hakkei.rankingBoard.v1";
 const DEFAULT_PLAYER_ID = "local-guest";
 export const DEFAULT_NICKNAME = "GUEST";
-// ニックネーム許容文字。`.` を含む（要望: ピリオド入力対応）。
-const NICKNAME_PATTERN = /^[A-Za-z0-9._-]{1,16}$/;
+// ニックネーム許容文字。合成初期ランキングの "PLAYER 001" と互換にする。
+const NICKNAME_PATTERN = /^[A-Za-z0-9._ -]{1,16}$/;
 const REMOTE_PLAYER_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
-
-export function createEphemeralRankingStorage(): StorageLike {
-  const values = new Map<string, string>();
-  return {
-    getItem(key) {
-      return values.get(key) ?? null;
-    },
-    setItem(key, value) {
-      values.set(key, String(value));
-    },
-    removeItem(key) {
-      values.delete(key);
-    },
-  };
-}
 
 function emptyBoard(): RankingBoardData {
   return { schemaVersion: 1, players: [], records: [] };
@@ -119,6 +104,16 @@ function sanitizeBoard(value: unknown): RankingBoardData {
   };
 }
 
+function normalizeBonusYen(value: unknown): string {
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return String(Math.round(value));
+  }
+  return "0";
+}
+
 function normalizePlayer(p: PlayerProfile): PlayerProfile {
   return {
     playerId: p.playerId,
@@ -127,6 +122,9 @@ function normalizePlayer(p: PlayerProfile): PlayerProfile {
     registeredAtMs: p.registeredAtMs,
     lastPlayedAtMs: p.lastPlayedAtMs,
     highScore: p.highScore,
+    highScoreCriticalBonusYen: normalizeBonusYen(
+      (p as { highScoreCriticalBonusYen?: unknown }).highScoreCriticalBonusYen,
+    ),
     playCount: p.playCount,
   };
 }
@@ -179,6 +177,7 @@ function deduplicatePlayers(players: PlayerProfile[]): PlayerProfile[] {
       existing.playerId.startsWith("public-") && !normalized.playerId.startsWith("public-")
         ? normalized
         : existing;
+    const highScoreSource = normalized.highScore > existing.highScore ? normalized : existing;
     result[existingIndex] = {
       ...preferred,
       nickname: normalized.nickname,
@@ -186,6 +185,7 @@ function deduplicatePlayers(players: PlayerProfile[]): PlayerProfile[] {
       registeredAtMs: earlierKnownRegistration(existing.registeredAtMs, normalized.registeredAtMs),
       lastPlayedAtMs: laterPlayedAt(existing.lastPlayedAtMs, normalized.lastPlayedAtMs),
       highScore: Math.max(existing.highScore, normalized.highScore),
+      highScoreCriticalBonusYen: highScoreSource.highScoreCriticalBonusYen,
       playCount: Math.max(existing.playCount, normalized.playCount),
     };
   }
@@ -199,6 +199,7 @@ function normalizeRecord(r: ScoreRecord): ScoreRecord {
     nickname: r.nickname,
     score: r.score,
     damageYen: r.damageYen,
+    criticalBonusYen: normalizeBonusYen((r as { criticalBonusYen?: unknown }).criticalBonusYen),
     rank: r.rank,
     videoLevel: r.videoLevel,
     playedAtMs: r.playedAtMs,
@@ -231,6 +232,18 @@ export function clearRankingBoard(storage: StorageLike): void {
 
 export function scoreFromBreakdown(breakdown: ScoreBreakdown): number {
   return Math.max(0, Math.round(Number.isFinite(breakdown.baseDamageYen) ? breakdown.baseDamageYen : 0));
+}
+
+export function criticalBonusFromBreakdown(breakdown: ScoreBreakdown): string {
+  const base = BigInt(scoreFromBreakdown(breakdown));
+  const totalText = breakdown.damageYenText ?? String(Math.max(0, Math.round(breakdown.damageYen)));
+  let total: bigint;
+  try {
+    total = BigInt(totalText);
+  } catch {
+    total = base;
+  }
+  return (total > base ? total - base : 0n).toString();
 }
 
 export function validateNickname(nickname: string): boolean {
@@ -308,6 +321,7 @@ export function getOrCreatePlayerProfile(
     registeredAtMs: nowMs,
     lastPlayedAtMs: null,
     highScore: 0,
+    highScoreCriticalBonusYen: "0",
     playCount: 0,
   };
   saveRankingBoard(storage, { ...board, players: [...board.players, player] });
@@ -371,119 +385,11 @@ export function getOrCreateRemotePlayerProfile(
     registeredAtMs: nowMs,
     lastPlayedAtMs: null,
     highScore: 0,
+    highScoreCriticalBonusYen: "0",
     playCount: 0,
   };
   saveRankingBoard(storage, { ...board, players: [...board.players, player] });
   return player;
-}
-
-export function importRemoteRegisteredPlayers(
-  storage: StorageLike,
-  entries: RegisteredSessionEntry[],
-): RankingBoardData {
-  const board = loadRankingBoard(storage);
-  const latestByPlayerId = new Map<string, RegisteredSessionEntry>();
-  for (const entry of entries) {
-    const remotePlayerId = entry.playerId.trim();
-    const nickname = normalizeNickname(entry.playerName);
-    if (!REMOTE_PLAYER_ID_PATTERN.test(remotePlayerId) || !validateNickname(nickname)) {
-      continue;
-    }
-    const previous = latestByPlayerId.get(remotePlayerId);
-    if (!previous || entry.registeredAtMs >= previous.registeredAtMs) {
-      latestByPlayerId.set(remotePlayerId, entry);
-    }
-  }
-
-  if (latestByPlayerId.size === 0) {
-    return board;
-  }
-
-  const players = [...board.players];
-  let changed = false;
-  for (const entry of latestByPlayerId.values()) {
-    const playerId = remotePlayerIdKey(entry.playerId.trim());
-    const nickname = normalizeNickname(entry.playerName);
-    const existingIndex = players.findIndex((p) => p.playerId === playerId);
-    if (existingIndex >= 0) {
-      const existing = players[existingIndex];
-      if (existing && existing.nickname !== nickname) {
-        players[existingIndex] = { ...existing, nickname };
-        changed = true;
-      }
-      continue;
-    }
-    players.push({
-      playerId,
-      nickname,
-      playerNumber: normalizePlayerNumber(entry.playerNumber),
-      registeredAtMs: entry.registeredAtMs,
-      lastPlayedAtMs: null,
-      highScore: 0,
-      playCount: 0,
-    });
-    changed = true;
-  }
-
-  if (!changed) {
-    return board;
-  }
-  const nextBoard = { ...board, players };
-  saveRankingBoard(storage, nextBoard);
-  return nextBoard;
-}
-
-export function importServerPlayerRegistry(
-  storage: StorageLike,
-  serverPlayers: ServerPlayerProfile[],
-): RankingBoardData {
-  const board = loadRankingBoard(storage);
-  const players = [...board.players];
-  let changed = false;
-
-  for (const serverPlayer of serverPlayers) {
-    const nickname = normalizeNickname(serverPlayer.nickname);
-    const playerNumber = normalizePlayerNumber(serverPlayer.playerNumber);
-    if (!REMOTE_PLAYER_ID_PATTERN.test(serverPlayer.playerId) || !validateNickname(nickname) || playerNumber === null) {
-      continue;
-    }
-    const existingIndex = players.findIndex((p) => p.playerId === serverPlayer.playerId);
-    if (existingIndex >= 0) {
-      const existing = players[existingIndex];
-      if (!existing) {
-        continue;
-      }
-      const merged: PlayerProfile = {
-        ...existing,
-        nickname,
-        playerNumber,
-        registeredAtMs: serverPlayer.registeredAtMs,
-        lastPlayedAtMs: serverPlayer.lastSeenAtMs,
-      };
-      if (JSON.stringify(existing) !== JSON.stringify(merged)) {
-        players[existingIndex] = merged;
-        changed = true;
-      }
-      continue;
-    }
-    players.push({
-      playerId: serverPlayer.playerId,
-      nickname,
-      playerNumber,
-      registeredAtMs: serverPlayer.registeredAtMs,
-      lastPlayedAtMs: serverPlayer.lastSeenAtMs,
-      highScore: 0,
-      playCount: 0,
-    });
-    changed = true;
-  }
-
-  if (!changed) {
-    return board;
-  }
-  const nextBoard = { ...board, players };
-  saveRankingBoard(storage, nextBoard);
-  return nextBoard;
 }
 
 export function importPublicPlayerSuggestions(
@@ -541,6 +447,7 @@ export function importPublicPlayerSuggestions(
       registeredAtMs,
       lastPlayedAtMs,
       highScore: 0,
+      highScoreCriticalBonusYen: "0",
       playCount: 0,
     });
     changed = true;
@@ -584,6 +491,7 @@ export function importServerRankingPlayers(
         registeredAtMs: serverPlayer.registeredAtMs,
         lastPlayedAtMs: serverPlayer.lastPlayedAtMs,
         highScore: serverPlayer.highScore,
+        highScoreCriticalBonusYen: serverPlayer.highScoreCriticalBonusYen,
         playCount: serverPlayer.playCount,
       };
       if (JSON.stringify(existing) !== JSON.stringify(merged)) {
@@ -599,6 +507,7 @@ export function importServerRankingPlayers(
       registeredAtMs: serverPlayer.registeredAtMs,
       lastPlayedAtMs: serverPlayer.lastPlayedAtMs,
       highScore: serverPlayer.highScore,
+      highScoreCriticalBonusYen: serverPlayer.highScoreCriticalBonusYen,
       playCount: serverPlayer.playCount,
     }));
     changed = true;
@@ -620,6 +529,7 @@ export function recordScoreForPlayer(
 ): SavedScoreResult {
   const board = loadRankingBoard(storage);
   const score = scoreFromBreakdown(breakdown);
+  const criticalBonusYen = criticalBonusFromBreakdown(breakdown);
   const playerIndex = board.players.findIndex((p) => p.playerId === player.playerId);
   const existing = playerIndex >= 0 ? board.players[playerIndex] : player;
   const previousHighScore = existing.highScore;
@@ -628,6 +538,9 @@ export function recordScoreForPlayer(
     ...existing,
     lastPlayedAtMs: nowMs,
     highScore: isHighScore ? score : previousHighScore,
+    highScoreCriticalBonusYen: isHighScore
+      ? criticalBonusYen
+      : existing.highScoreCriticalBonusYen,
     playCount: existing.playCount + 1,
   };
   const record: ScoreRecord = {
@@ -636,6 +549,7 @@ export function recordScoreForPlayer(
     nickname: updatedPlayer.nickname,
     score,
     damageYen: breakdown.damageYen,
+    criticalBonusYen,
     rank: breakdown.rank,
     videoLevel: breakdown.videoLevel,
     playedAtMs: nowMs,
@@ -671,21 +585,10 @@ export function recordScoreForDefaultPlayer(
     registeredAtMs: board.players[playerIndex]?.registeredAtMs ?? nowMs,
     lastPlayedAtMs: board.players[playerIndex]?.lastPlayedAtMs ?? null,
     highScore: board.players[playerIndex]?.highScore ?? 0,
+    highScoreCriticalBonusYen: board.players[playerIndex]?.highScoreCriticalBonusYen ?? "0",
     playCount: board.players[playerIndex]?.playCount ?? 0,
   };
   return recordScoreForPlayer(storage, player, breakdown, nowMs);
-}
-
-// 指定プレイヤーとそのスコア記録をランキングから削除する。
-export function removePlayer(storage: StorageLike, playerId: string): RankingBoardData {
-  const board = loadRankingBoard(storage);
-  const nextBoard: RankingBoardData = {
-    schemaVersion: 1,
-    players: board.players.filter((p) => p.playerId !== playerId),
-    records: board.records.filter((r) => r.playerId !== playerId),
-  };
-  saveRankingBoard(storage, nextBoard);
-  return nextBoard;
 }
 
 export function rankingRows(board: RankingBoardData): PlayerProfile[] {

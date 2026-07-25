@@ -24,15 +24,11 @@ import {
   type KeyboardControlPayload,
   type MotionSample,
   type DebugLogRequest,
-  type RegisteredSessionEntry,
-  type RegisteredUsersPayload,
   type RemoteHttpResponse,
   type RemoteSessionSendRequest,
   type RemoteSessionStartRequest,
   type ResetFilterRequest,
   type ResetPlayRequest,
-  type SettingsAdminResetPayload,
-  type SettingsAdminResetRequest,
   type SettingsSaveScoreRequest,
 } from "../shared/types.ts";
 
@@ -54,8 +50,6 @@ let lastKeyboardSessionId: string | null = null;
 let punchAdapter: PunchInputAdapter | null = null;
 let remoteSessionClient: RemoteSessionClient | null = null;
 const SCORE_ENTRY_BASE_URL = "http://127.0.0.1:45200";
-const SERVER_RESET_CONFIRM = "DELETE_ALL_HAKKEI_DATA";
-const GAME_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 
 function scoreEntryBaseUrl(): string {
   return (configResult.ok ? configResult.value.app.remoteSession.httpBaseUrl : SCORE_ENTRY_BASE_URL).replace(/\/+$/, "");
@@ -69,20 +63,20 @@ function isLocalMode(): boolean {
   return process.argv.includes("--local-mode");
 }
 
+function isDemoQrMode(): boolean {
+  return process.argv.includes("--demo-qr");
+}
+
 function isRemoteMode(): boolean {
-  return !isLocalMode() && configResult.ok && configResult.value.app.remoteSession.enabled;
+  return !isLocalMode() && !isDemoQrMode() && configResult.ok && configResult.value.app.remoteSession.enabled;
 }
 
 function runtimeConfig(): AppConfigBundle["runtime"] {
-  return { uiMode: getRuntimeUiMode(), localMode: isLocalMode() };
+  return { uiMode: getRuntimeUiMode(), localMode: isLocalMode(), demoQr: isDemoQrMode() };
 }
 
 function isSettingsMode(): boolean {
   return process.argv.includes("--settings");
-}
-
-function isRegisteredUsersMode(): boolean {
-  return process.argv.includes("--registered-users");
 }
 
 function configDir(): string {
@@ -122,33 +116,6 @@ function send(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
   }
-}
-
-function isRegisteredSessionEntry(value: unknown): value is RegisteredSessionEntry {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const entry = value as Partial<RegisteredSessionEntry>;
-  return (
-    typeof entry.sessionId === "string" &&
-    typeof entry.playerId === "string" &&
-    typeof entry.playerName === "string" &&
-    typeof entry.registeredAtMs === "number" &&
-    Number.isFinite(entry.registeredAtMs)
-  );
-}
-
-function isRegisteredUsersPayload(value: unknown): value is RegisteredUsersPayload {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const payload = value as Partial<RegisteredUsersPayload>;
-  return (
-    typeof payload.generatedAtMs === "number" &&
-    Number.isFinite(payload.generatedAtMs) &&
-    Array.isArray(payload.entries) &&
-    payload.entries.every(isRegisteredSessionEntry)
-  );
 }
 
 // MotionSample を Renderer へ。併せて Main 生成の PunchInputSample（punch core 入力）も emit する。
@@ -229,64 +196,17 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle(IPC.registeredUsersList, async (): Promise<IpcResult<RegisteredUsersPayload>> => {
-    if (!isRemoteMode()) {
-      return { ok: false, code: "MODE_UNAVAILABLE", messageJa: "QR登録サーバーは無効です" };
-    }
-    const adminToken = process.env.HAKKEI_ADMIN_TOKEN?.trim();
-    if (!adminToken) {
-      return {
-        ok: false,
-        code: "MODE_UNAVAILABLE",
-        messageJa: "登録ユーザー一覧は管理トークンが設定された運用端末だけで取得できます",
-      };
-    }
-    try {
-      const response = await fetch(`${scoreEntryBaseUrl()}/api/session-entries`, {
-        cache: "no-store",
-        headers: { "Authorization": `Bearer ${adminToken}` },
-      });
-      if (!response.ok) {
-        return {
-          ok: false,
-          code: "INVALID_REQUEST",
-          messageJa: `登録サーバーが ${response.status} を返しました`,
-        };
-      }
-      const payload = (await response.json()) as unknown;
-      if (!isRegisteredUsersPayload(payload)) {
-        return {
-          ok: false,
-          code: "INVALID_REQUEST",
-          messageJa: "登録サーバーの一覧形式が不正です",
-        };
-      }
-      return { ok: true, value: payload };
-    } catch (e) {
-      return {
-        ok: false,
-        code: "INVALID_REQUEST",
-        messageJa: `登録ユーザー一覧を取得できません: ${e instanceof Error ? e.message : String(e)}`,
-      };
-    }
-  });
-
   ipcMain.handle(IPC.remoteSessionStart, (_e, request: RemoteSessionStartRequest): IpcResult => {
     if (!isRemoteMode()) {
       return { ok: false, code: "MODE_UNAVAILABLE", messageJa: "QR登録サーバーは無効です" };
     }
-    if (
-      typeof request?.sessionId !== "string" ||
-      request.sessionId.length === 0 ||
-      typeof request.gameToken !== "string" ||
-      !GAME_TOKEN_PATTERN.test(request.gameToken)
-    ) {
-      return { ok: false, code: "INVALID_REQUEST", messageJa: "sessionId またはゲーム認証情報が不正です" };
+    if (typeof request?.sessionId !== "string" || request.sessionId.length === 0) {
+      return { ok: false, code: "INVALID_REQUEST", messageJa: "sessionId が不正です" };
     }
     if (configResult.ok) {
       remoteSessionClient?.updateConfig(configResult.value.app.remoteSession);
     }
-    remoteSessionClient?.start(request.sessionId, request.gameToken);
+    remoteSessionClient?.start(request.sessionId);
     return { ok: true };
   });
 
@@ -322,66 +242,6 @@ function registerIpc(): void {
         ok: false,
         code: "INVALID_REQUEST",
         messageJa: `QR登録サーバーへ接続できません: ${e instanceof Error ? e.message : String(e)}`,
-      };
-    }
-  });
-
-  ipcMain.handle(IPC.settingsAdminReset, async (_e, request: SettingsAdminResetRequest): Promise<IpcResult<SettingsAdminResetPayload>> => {
-    if (!isRemoteMode()) {
-      return { ok: false, code: "MODE_UNAVAILABLE", messageJa: "QR登録サーバーは無効です" };
-    }
-    if (request?.confirm !== SERVER_RESET_CONFIRM) {
-      return { ok: false, code: "INVALID_REQUEST", messageJa: "確認文字列が不正です" };
-    }
-    const adminToken = process.env.HAKKEI_ADMIN_TOKEN?.trim();
-    if (!adminToken) {
-      return {
-        ok: false,
-        code: "MODE_UNAVAILABLE",
-        messageJa: "サーバー管理トークンが設定されていないため、公開版からは全削除できません",
-      };
-    }
-    try {
-      const response = await fetch(`${scoreEntryBaseUrl()}/api/admin-reset`, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          "Authorization": `Bearer ${adminToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ confirm: SERVER_RESET_CONFIRM }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as Partial<SettingsAdminResetPayload> & { error?: unknown };
-      if (!response.ok) {
-        return {
-          ok: false,
-          code: "INVALID_REQUEST",
-          messageJa:
-            typeof payload.error === "string"
-              ? `登録サーバーの削除に失敗しました: ${payload.error}`
-              : `登録サーバーが ${response.status} を返しました`,
-        };
-      }
-      if (payload.entriesDeleted !== true || payload.playersDeleted !== true || payload.rankingDeleted !== true) {
-        return {
-          ok: false,
-          code: "INVALID_REQUEST",
-          messageJa: "登録サーバーの削除結果が不正です。サーバー版が古い可能性があります",
-        };
-      }
-      return {
-        ok: true,
-        value: {
-          entriesDeleted: true,
-          playersDeleted: true,
-          rankingDeleted: true,
-        },
-      };
-    } catch (e) {
-      return {
-        ok: false,
-        code: "INVALID_REQUEST",
-        messageJa: `登録サーバーの削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
       };
     }
   });
@@ -495,7 +355,7 @@ function createReceiver(bundle: AppConfigBundle): void {
 }
 
 function createWindow(): void {
-  const releaseMainWindow = !isSettingsMode() && !isRegisteredUsersMode() && getRuntimeUiMode() === "release";
+  const releaseMainWindow = !isSettingsMode() && getRuntimeUiMode() === "release";
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -517,11 +377,7 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", (event) => event.preventDefault());
   mainWindow.once("ready-to-show", () => mainWindow?.show());
-  const fileName = isSettingsMode()
-    ? "settings.html"
-    : isRegisteredUsersMode()
-      ? "registered-users.html"
-      : "index.html";
+  const fileName = isSettingsMode() ? "settings.html" : "index.html";
   void mainWindow.loadFile(path.join(__dirname, "..", "renderer", fileName));
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -529,7 +385,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  if (isSettingsMode() || isRegisteredUsersMode()) {
+  if (isSettingsMode()) {
     registerIpc();
     createWindow();
     return;

@@ -11,7 +11,7 @@ if exist "%NODE_DIR%\npm.cmd" set "NPM_CMD=%NODE_DIR%\npm.cmd"
 call "%NPM_CMD%" -v >nul 2>nul
 if errorlevel 1 (
   echo [ERROR] npm.cmd was not found.
-  echo Install Node.js 22.12 or newer, then run debug.bat again.
+  echo Install Node.js 22.13 or newer, then run debug.bat again.
   echo.
   pause
   exit /b 1

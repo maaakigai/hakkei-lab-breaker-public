@@ -28,7 +28,6 @@ type SettingsSection = {
 
 const api = (window as unknown as { hakkei: HakkeiPreloadApi }).hakkei;
 const root = document.getElementById("settings-app");
-const SERVER_RESET_CONFIRM = "DELETE_ALL_HAKKEI_DATA";
 
 let scoreConfig: ScoreConfig | null = null;
 let appConfig: AppConfig | null = null;
@@ -36,7 +35,6 @@ let inputConfig: InputConfig | null = null;
 let dirty = false;
 let statusText = "読み込み中";
 let statusTone: "idle" | "ok" | "error" = "idle";
-let serverResetConfirmText = "";
 
 const sections: SettingsSection[] = [
   {
@@ -334,35 +332,13 @@ function renderRankingResetSettings(): string {
     <section class="settings-panel danger-panel">
       <div class="panel-heading">
         <h2>ランキング記録</h2>
-        <p>このPCの登録済みユーザー、表示IDキャッシュ、High Score、プレイ履歴を削除します。本番初期化時だけサーバーのユーザー台帳、表示ID、QR session、ランキングも削除してください。</p>
+        <p>このPCの登録済みユーザー、表示IDキャッシュ、High Score、プレイ履歴を削除します。</p>
       </div>
       <div class="reset-summary">
         <span>登録ユーザー: <strong>${board.players.length}</strong></span>
         <span>プレイ履歴: <strong>${board.records.length}</strong></span>
       </div>
       <button id="reset-ranking-button" class="danger" type="button">このPCのユーザー/ID/スコア記録をリセット</button>
-      <div class="server-reset-confirm">
-        <label class="field">
-          <span class="field-label">サーバー台帳も含めて全削除</span>
-          <span class="field-input-row">
-            <input
-              id="server-reset-confirm-input"
-              type="text"
-              value="${escapeHtml(serverResetConfirmText)}"
-              placeholder="${SERVER_RESET_CONFIRM}"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <button
-              id="reset-all-ranking-button"
-              class="danger"
-              type="button"
-              ${serverResetConfirmText === SERVER_RESET_CONFIRM ? "" : " disabled"}
-            >実行</button>
-          </span>
-          <span class="field-note">本番初期化時だけ実行します。サーバーのユーザー台帳、ID採番、QR session、ランキングを削除し、次の新規ユーザーはID26001から再採番されます。</span>
-        </label>
-      </div>
     </section>
   `;
 }
@@ -688,16 +664,6 @@ function bind(): void {
     statusTone = "ok";
     render();
   });
-  document.getElementById("server-reset-confirm-input")?.addEventListener("input", (event) => {
-    serverResetConfirmText = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value : "";
-    const button = document.getElementById("reset-all-ranking-button") as HTMLButtonElement | null;
-    if (button) {
-      button.disabled = serverResetConfirmText !== SERVER_RESET_CONFIRM;
-    }
-  });
-  document.getElementById("reset-all-ranking-button")?.addEventListener("click", () => {
-    void resetServerAndLocalRanking();
-  });
   document.querySelectorAll<HTMLInputElement>("[data-number-path]").forEach((input) => {
     input.addEventListener("input", () => {
       if (!scoreConfig) return;
@@ -764,33 +730,6 @@ function bind(): void {
     markDirty();
     render();
   });
-}
-
-async function resetServerAndLocalRanking(): Promise<void> {
-  if (serverResetConfirmText !== SERVER_RESET_CONFIRM) {
-    statusText = `サーバー削除には確認文字列 ${SERVER_RESET_CONFIRM} が必要です`;
-    statusTone = "error";
-    renderStatus();
-    return;
-  }
-  statusText = "サーバー記録を削除中...";
-  statusTone = "idle";
-  renderStatus();
-  try {
-    const result = await api.settingsAdminReset({ confirm: SERVER_RESET_CONFIRM });
-    if (!result.ok) {
-      throw new Error(result.messageJa);
-    }
-    clearRankingBoard(localStorage);
-    serverResetConfirmText = "";
-    statusText = "サーバーとこのPCのユーザー台帳/ID/スコア記録をすべてリセットしました。次の新規ユーザーはID26001から採番されます";
-    statusTone = "ok";
-    render();
-  } catch (error) {
-    statusText = error instanceof Error ? `サーバー削除に失敗しました: ${error.message}` : "サーバー削除に失敗しました";
-    statusTone = "error";
-    renderStatus();
-  }
 }
 
 function updateDamageInput(input: HTMLInputElement): void {

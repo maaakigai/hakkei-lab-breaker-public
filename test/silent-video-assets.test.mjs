@@ -79,7 +79,7 @@ test("公開版の全MP4は映像トラックを持ち、音声トラックを�
     .map((path) => resolve(root, path))
     .filter(existsSync)
     .filter((path) => extname(path).toLowerCase() === ".mp4");
-  assert.equal(videoFiles.length, 20);
+  assert.equal(videoFiles.length, 21);
 
   for (const path of videoFiles) {
     const handlers = trackHandlerTypes(readFileSync(path));

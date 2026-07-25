@@ -1,19 +1,19 @@
-# Third Party Notices
+# 第三者ソフトウェアに関する通知
 
 ## Sony mocopi Receiver Plugin for Unity
 
-`unity-bridge/Assets/MocopiReceiver/` contains the runtime portion of Sony's mocopi Receiver Plugin for Unity. The public portfolio snapshot omits the upstream sample scene and sample avatar; they can be obtained from the source repository when needed.
+`unity-bridge/Assets/MocopiReceiver/`には、Sonyのmocopi Receiver Plugin for Unityのランタイム部分を収録しています。公開ポートフォリオ版には配布元のサンプルシーンとサンプルアバターを含めていません。必要な場合は配布元リポジトリから取得できます。
 
-- Source: https://github.com/sony/mocopi-receiver-plugin-unity
-- License: Apache License 2.0
-- Bundled license: `unity-bridge/Assets/MocopiReceiver/LICENSE.txt`
+- 配布元：https://github.com/sony/mocopi-receiver-plugin-unity
+- ライセンス：Apache License 2.0
+- 同梱ライセンス原文：`unity-bridge/Assets/MocopiReceiver/LICENSE.txt`
 
-Project-created visual assets and generated placeholder audio are documented in [`ASSET_LICENSES.md`](ASSET_LICENSES.md).
+プロジェクト制作の視覚素材と、生成した無音プレースホルダーについては、[`ASSET_LICENSES.md`](ASSET_LICENSES.md)に記載しています。
 
 ## cozmo/jsQR
 
-`CloudServer/hakkei-score-server/assets/js/jsQR.js` contains the browser build of `cozmo/jsQR`.
+`CloudServer/hakkei-score-server/assets/js/jsQR.js`には、`cozmo/jsQR`のブラウザー用ビルドを収録しています。
 
-- Source: https://github.com/cozmo/jsQR
-- License: Apache License 2.0
-- Bundled license: `CloudServer/hakkei-score-server/assets/js/LICENSE-jsQR.txt`
+- 配布元：https://github.com/cozmo/jsQR
+- ライセンス：Apache License 2.0
+- 同梱ライセンス原文：`CloudServer/hakkei-score-server/assets/js/LICENSE-jsQR.txt`

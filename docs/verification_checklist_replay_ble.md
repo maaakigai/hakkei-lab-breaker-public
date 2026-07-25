@@ -1,4 +1,4 @@
-# Replay BLE Verification Checklist
+# BLE再プレイ確認チェックリスト
 
 ## 二回目以降の発勁反応
 

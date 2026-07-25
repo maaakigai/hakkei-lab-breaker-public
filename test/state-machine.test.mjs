@@ -1,6 +1,6 @@
 // test/state-machine.test.mjs
 // M1-17: 状態遷移の単体テスト。
-// Node 24 のネイティブ TypeScript サポート（型ストリップ）で .ts を直接 import する。
+// Node 22.13+ のネイティブ TypeScript 型ストリップで .ts を直接 import する。
 import test from "node:test";
 import assert from "node:assert/strict";
 
