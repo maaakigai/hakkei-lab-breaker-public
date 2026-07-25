@@ -1,6 +1,6 @@
 # 公開版の実装要件
 
-最終更新: 2026-07-24
+最終更新: 2026-07-26
 
 Unity Bridgeを標準経路としていた旧要件は、[archive/legacy/requirements-unity-bridge.md](archive/legacy/requirements-unity-bridge.md) に移しました。
 
@@ -18,9 +18,9 @@ Unity Bridgeを標準経路としていた旧要件は、[archive/legacy/require
 
 - `Ready → Charge → HakkeiReady → VideoPlayback → Result` を完走できる。
 - チャージ量とパンチ強度からPower、損害額、ランク、動画レベルを決める。
-- 公開版の動画は制作チーム作成の研究室内素材だけを使う。
-- 実在企業を対象にした映像、追加抽選、専用演出は含めない。
-- プレイヤーごとの操作を緩和する隠しモードは含めない。
+- 通常Lvには制作チームが研究室写真から制作した映像を使い、CriticalにはGeminiを用いて制作した架空の大型電波塔映像を使う。
+- CriticalはPowerに応じた抽選で発生し、大型電波塔の専用映像と650億円の表示用ボーナスを加える。ランキングはボーナス加算前のbase scoreだけで比較する。
+- mocopi入力時の成立基準を下げるParticipant Assistと、動作確認用のforced Criticalを含める。Assist単独ではCriticalを保証せず、どちらも有効時は画面上に状態を表示する。
 - `R` と `Esc` で安全に復帰できる。
 
 ## 公開・権利要件

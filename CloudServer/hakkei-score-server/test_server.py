@@ -374,6 +374,15 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             json=self.ranking_payload(),
         )
         self.assertEqual(score.status, 200, await score.text())
+        score_payload = await score.json()
+        submitted_number = score_payload["submittedPlayerNumber"]
+        submitted_player = next(
+            player
+            for player in score_payload["players"]
+            if player["playerNumber"] == submitted_number
+        )
+        self.assertEqual(submitted_player["nickname"], "ALICE")
+        self.assertNotIn("playerId", str(score_payload))
 
         for path, expected_fields in (
             ("/api/ranking-board", PUBLIC_RANKING_FIELDS),
@@ -392,6 +401,48 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(player["playCount"], 1)
             if path == "/api/ranking-board":
                 self.assertEqual(player["highScoreCriticalBonusYen"], "0")
+                self.assertNotIn("submittedPlayerNumber", payload)
+
+    async def test_duplicate_ranking_response_keeps_submitted_player_marker(self) -> None:
+        payload = self.ranking_payload(
+            player_id="manual-first-player",
+            nickname="NEWCOMER",
+        )
+        first = await self.client.post("/api/ranking-score", json=payload)
+        self.assertEqual(first.status, 200, await first.text())
+        first_body = await first.json()
+        submitted_number = first_body["submittedPlayerNumber"]
+        self.assertEqual(
+            next(
+                player
+                for player in first_body["players"]
+                if player["playerNumber"] == submitted_number
+            )["nickname"],
+            "NEWCOMER",
+        )
+
+        duplicate = await self.client.post("/api/ranking-score", json=payload)
+        self.assertEqual(duplicate.status, 200, await duplicate.text())
+        duplicate_body = await duplicate.json()
+        self.assertEqual(
+            duplicate_body["submittedPlayerNumber"],
+            submitted_number,
+        )
+        self.assertEqual(
+            next(
+                player
+                for player in duplicate_body["players"]
+                if player["playerNumber"] == submitted_number
+            )["playCount"],
+            1,
+        )
+
+        public_response = await self.client.get("/api/ranking-board")
+        self.assertEqual(public_response.status, 200)
+        self.assertNotIn(
+            "submittedPlayerNumber",
+            await public_response.json(),
+        )
 
     async def test_critical_bonus_is_separate_from_leaderboard_score(self) -> None:
         critical = self.ranking_payload(

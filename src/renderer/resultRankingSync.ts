@@ -15,6 +15,21 @@ function samePlayer(a: PlayerProfile, b: PlayerProfile): boolean {
   );
 }
 
+export function rankingIdentityForResponseRow(
+  rowPlayerNumber: number,
+  submittedPlayerNumber: number | undefined,
+  submittedPlayer: PlayerProfile | null,
+  currentPlayer: PlayerProfile | null,
+): PlayerProfile | null {
+  if (
+    submittedPlayer !== null &&
+    submittedPlayerNumber === rowPlayerNumber
+  ) {
+    return submittedPlayer;
+  }
+  return currentPlayer?.playerNumber === rowPlayerNumber ? currentPlayer : null;
+}
+
 export function rankingPlayerFor(
   board: RankingBoardData | null,
   player: PlayerProfile,
