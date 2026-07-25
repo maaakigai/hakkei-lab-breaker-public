@@ -20,11 +20,11 @@
 - [ ] `npm run build` が通る。
 - [ ] 作業ツリーに意図しない差分がない。
 
-## 2. Gate A: Baseline App
+## 2. 基準動作（Gate A）
 
 - [ ] `npm run dev:debug` で診断・入力切替を含むDebug UIとしてElectronが起動する。
 - [ ] `scripts/windows/release.bat` でリリースUIとしてElectronが起動する。
-- [ ] `START GAME`で共有デモサーバーのHTTPS URLを含むQRが表示され、`Failed to fetch`にならない。
+- [ ] `START GAME`で共有QRサーバーのHTTPS URLを含むQRが表示され、`Failed to fetch`にならない。
 - [ ] スマートフォンでQRを読み、ニックネーム登録後にElectronがInputCheckへ進む。
 - [ ] `logs/state-YYYYMMDD.log`に`ws status=open`またはHTTPの`fetch entry ... -> ok`が記録される。
 - [ ] Debug UIのTitleに `mocopi BLE（本命）`、`Keyboard（debug）`、`None` が出る。
@@ -53,7 +53,7 @@
 - [ ] RでReady以降からInputCheckへ戻る。
 - [ ] EscでTitleへ戻る。
 
-## 3. Gate B: BLE Probe
+## 3. BLEプローブ（Gate B）
 
 - [ ] mocopiがWindowsのペアリング済み状態ではなく、青点滅のadvertising状態である。
 - [ ] `tools/mocopi_ble_probe.py` またはsidecarでQM-SS1を発見できる。
@@ -62,7 +62,7 @@
 - [ ] 静止時の角速度noise floorを記録した。
 - [ ] パンチ時のpeak角速度が静止より十分大きい。
 
-## 4. Gate C: Sidecar Integration
+## 4. サイドカー統合（Gate C）
 
 - [ ] Titleで `mocopi BLE（本命）` を選ぶとsidecarが起動する。
 - [ ] InputCheckにsidecar状態が表示される。
@@ -72,7 +72,7 @@
 - [ ] sidecar停止や実機未接続でもアプリが落ちない。
 - [ ] Keyboard debug fallbackへ切り替えられる。
 
-## 5. Gate D: Signal Quality
+## 5. 信号品質（Gate D）
 
 - [ ] 完全静止10秒でfalse trigger 0。
 - [ ] 静止時のnoise floorを記録した。
@@ -81,7 +81,7 @@
 - [ ] 連続受信中に大きなgapがない。
 - [ ] 不正packet、低Hz、disconnectが診断に出る。
 
-## 6. Gate E: Game Loop via BLE
+## 6. BLEによるゲーム進行（Gate E）
 
 - [ ] BLE実機でReadyへ進める。
 - [ ] Charge中に利き手を振るとタメが増える。
@@ -91,7 +91,7 @@
 - [ ] 10連続プレイでクラッシュ0。
 - [ ] timeout時はno-impact / Lv0になる。
 
-## 7. Gate F: Demo Readiness
+## 7. デモ準備状況（Gate F）
 
 - [ ] 30分連続受信で平均45〜55Hz。
 - [ ] payload violation 0。

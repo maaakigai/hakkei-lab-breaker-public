@@ -38,6 +38,23 @@ export function calculatePowerFromScores(
   return rightChargeScore * leftChargeScore * hakkeiScore * powerCoefficient;
 }
 
+/**
+ * Critical is available only in the S-rank range. Within that range, stronger
+ * hits move smoothly from the configured base probability to the maximum.
+ */
+export function criticalRateForPower(
+  power: number,
+  opts: { sThreshold: number; maxPower: number; baseRate: number; maxRate: number; gamma: number },
+): number {
+  const span = opts.maxPower - opts.sThreshold;
+  if (span <= 0) {
+    return opts.baseRate;
+  }
+  const t = clamp((power - opts.sThreshold) / span, 0, 1);
+  const shaped = Math.pow(t, opts.gamma > 0 ? opts.gamma : 1);
+  return opts.baseRate + (opts.maxRate - opts.baseRate) * shaped;
+}
+
 /** rankThresholds を降順評価。境界値は上位 rank に含める（SPEC.md 14.6）。 */
 export function selectRank(power: number, cfg: ScoreConfig): Rank {
   const sorted = [...cfg.rankThresholds].sort((a, b) => b.minPower - a.minPower);

@@ -25,7 +25,6 @@ import {
   type RemoteSessionStatusPayload,
   type ResetFilterRequest,
   type ResetPlayRequest,
-  type SettingsAdminResetRequest,
   type SettingsSaveScoreRequest,
   type SessionChangedPayload,
   type Unsubscribe,
@@ -58,9 +57,6 @@ const api: HakkeiPreloadApi = {
   settingsGetConfig: () => ipcRenderer.invoke(IPC.settingsGetConfig),
   settingsSaveScore: (request: SettingsSaveScoreRequest) =>
     ipcRenderer.invoke(IPC.settingsSaveScore, request),
-  settingsAdminReset: (request: SettingsAdminResetRequest) =>
-    ipcRenderer.invoke(IPC.settingsAdminReset, request),
-  registeredUsersList: () => ipcRenderer.invoke(IPC.registeredUsersList),
   remoteSessionStart: (request: RemoteSessionStartRequest) =>
     ipcRenderer.invoke(IPC.remoteSessionStart, request),
   remoteSessionSend: (request: RemoteSessionSendRequest) =>

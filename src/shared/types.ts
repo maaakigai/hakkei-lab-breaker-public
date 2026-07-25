@@ -427,56 +427,7 @@ export type SettingsSaveScoreRequest = {
   score: unknown;
 };
 
-export type SettingsAdminResetRequest = {
-  confirm: string;
-};
-
-export type SettingsAdminResetPayload = {
-  entriesDeleted: boolean;
-  playersDeleted: boolean;
-  rankingDeleted: boolean;
-};
-
-export type RegisteredSessionEntry = {
-  sessionId: string;
-  playerId: string;
-  playerName: string;
-  registeredAtMs: number;
-  playerNumber?: number | null;
-};
-
-export type RegisteredUsersPayload = {
-  generatedAtMs: number;
-  entries: RegisteredSessionEntry[];
-};
-
-export type ServerPlayerProfile = {
-  playerId: string;
-  nickname: string;
-  playerNumber: number;
-  registeredAtMs: number;
-  lastSeenAtMs: number | null;
-};
-
-export type PlayerRegistryPayload = {
-  generatedAtMs: number;
-  players: ServerPlayerProfile[];
-};
-
 export type PublicPlayerSuggestion = {
-  nickname: string;
-  playerNumber: number;
-  registeredAtMs: number;
-  lastPlayedAtMs: number | null;
-};
-
-export type PublicPlayerSuggestionsPayload = {
-  generatedAtMs: number;
-  players: PublicPlayerSuggestion[];
-  dataMode?: "synthetic-demo";
-};
-
-export type PublicRankingPlayer = {
   nickname: string;
   playerNumber: number;
   registeredAtMs: number;
@@ -485,12 +436,24 @@ export type PublicRankingPlayer = {
   playCount: number;
 };
 
+export type PublicPlayerSuggestionsPayload = {
+  players: PublicPlayerSuggestion[];
+};
+
+export type PublicRankingPlayer = {
+  nickname: string;
+  playerNumber: number;
+  registeredAtMs: number;
+  lastPlayedAtMs: number | null;
+  highScore: number;
+  highScoreCriticalBonusYen: string;
+  playCount: number;
+};
+
 export type PublicRankingBoard = {
   schemaVersion: 1;
   players: PublicRankingPlayer[];
   submittedPlayerNumber?: number;
-  dataMode?: "synthetic-demo";
-  submissionScope?: "response-only";
 };
 
 export type RemoteSessionActor = "game" | "phone" | "server";
@@ -548,7 +511,6 @@ export type RemoteSessionEvent = {
 
 export type RemoteSessionStartRequest = {
   sessionId: string;
-  gameToken: string;
 };
 
 export type RemoteSessionSendRequest = {
@@ -565,21 +527,18 @@ export type RemoteHttpRequest =
       method: "GET";
       path: "/api/session-entry";
       query: { sessionId: string };
-      gameToken: string;
     }
   | {
       method: "POST";
       path: "/api/session-input-check";
       query: { sessionId: string; ready?: boolean };
-      gameToken: string;
     }
   | {
       method: "POST";
       path: "/api/session-input-exit";
       query: { sessionId: string; play?: boolean };
-      gameToken: string;
     }
-  | { method: "POST"; path: "/api/session-open" | "/api/session-result" | "/api/ranking-score"; body: unknown };
+  | { method: "POST"; path: "/api/session-result" | "/api/ranking-score"; body: unknown };
 
 export type RemoteHttpResponse = {
   status: number;
@@ -639,8 +598,6 @@ export const IPC = {
   bleSidecarControl: "ble:sidecar-control", // Renderer -> Main（V5）
   settingsGetConfig: "settings:config:get",
   settingsSaveScore: "settings:score:save",
-  settingsAdminReset: "settings:admin-reset",
-  registeredUsersList: "registered-users:list",
   remoteSessionStart: "remote-session:start",
   remoteSessionSend: "remote-session:send",
   remoteSessionStop: "remote-session:stop",
@@ -673,8 +630,6 @@ export type HakkeiPreloadApi = {
   controlBleSidecar(payload: BleSidecarControlPayload): Promise<IpcResult>;
   settingsGetConfig(): Promise<IpcResult<SettingsConfigPayload>>;
   settingsSaveScore(request: SettingsSaveScoreRequest): Promise<IpcResult>;
-  settingsAdminReset(request: SettingsAdminResetRequest): Promise<IpcResult<SettingsAdminResetPayload>>;
-  registeredUsersList(): Promise<IpcResult<RegisteredUsersPayload>>;
   remoteSessionStart(request: RemoteSessionStartRequest): Promise<IpcResult>;
   remoteSessionSend(request: RemoteSessionSendRequest): Promise<IpcResult>;
   remoteSessionStop(): Promise<IpcResult>;

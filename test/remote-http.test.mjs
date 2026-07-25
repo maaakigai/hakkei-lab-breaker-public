@@ -8,8 +8,6 @@ import {
   validateRemoteHttpRequest,
 } from "../src/main/remoteHttp.ts";
 
-const GAME_TOKEN = "a".repeat(64);
-
 test("remote HTTP IPC accepts only the QR/ranking API allowlist", () => {
   assert.equal(validateRemoteHttpRequest({ method: "GET", path: "/api/ranking-board" }), true);
   assert.equal(validateRemoteHttpRequest({ method: "GET", path: "/api/player-suggestions" }), true);
@@ -18,26 +16,17 @@ test("remote HTTP IPC accepts only the QR/ranking API allowlist", () => {
     validateRemoteHttpRequest({
       method: "POST",
       path: "/api/session-open",
-      body: { sessionId: "hakkei-test_01", gameToken: GAME_TOKEN },
-    }),
-    true,
-  );
-  assert.equal(
-    validateRemoteHttpRequest({
-      method: "GET",
-      path: "/api/session-entry",
-      query: { sessionId: "hakkei-test_01" },
-      gameToken: GAME_TOKEN,
-    }),
-    true,
-  );
-  assert.equal(
-    validateRemoteHttpRequest({
-      method: "GET",
-      path: "/api/session-entry",
-      query: { sessionId: "hakkei-test_01" },
+      body: { sessionId: "hakkei-test_01" },
     }),
     false,
+  );
+  assert.equal(
+    validateRemoteHttpRequest({
+      method: "GET",
+      path: "/api/session-entry",
+      query: { sessionId: "hakkei-test_01" },
+    }),
+    true,
   );
   assert.equal(validateRemoteHttpRequest({ method: "GET", path: "https://example.com" }), false);
   assert.equal(
@@ -45,7 +34,6 @@ test("remote HTTP IPC accepts only the QR/ranking API allowlist", () => {
       method: "GET",
       path: "/api/session-entry",
       query: { sessionId: "../invalid" },
-      gameToken: GAME_TOKEN,
     }),
     false,
   );
@@ -72,7 +60,7 @@ test("remote HTTP request sends validated query and JSON through Main", async (t
         method: request.method,
         url: request.url,
         contentType: request.headers["content-type"],
-        gameToken: request.headers["x-hakkei-game-token"],
+        authHeader: request.headers.authorization,
         body,
       });
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -91,7 +79,6 @@ test("remote HTTP request sends validated query and JSON through Main", async (t
     method: "GET",
     path: "/api/session-entry",
     query: { sessionId: "hakkei-test" },
-    gameToken: GAME_TOKEN,
   });
   const postResult = await performRemoteHttpRequest(baseUrl, {
     method: "POST",
@@ -106,14 +93,14 @@ test("remote HTTP request sends validated query and JSON through Main", async (t
       method: "GET",
       url: "/api/session-entry?sessionId=hakkei-test",
       contentType: undefined,
-      gameToken: GAME_TOKEN,
+      authHeader: undefined,
       body: "",
     },
     {
       method: "POST",
       url: "/api/session-result",
       contentType: "application/json",
-      gameToken: undefined,
+      authHeader: undefined,
       body: JSON.stringify({ sessionId: "hakkei-test", damageYen: 123 }),
     },
   ]);

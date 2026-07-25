@@ -20,6 +20,7 @@
     "punchReleaseRatio": 0.5,
     "chargeNoiseFloor": 0.1,
     "chargeReadyThreshold": 8000,
+    "participantAssistChargeReadyThreshold": 6000,
     "chargeReadyThresholdKeyboard": 10,
     "cooldownMs": 800,
     "chargeMax": 3000,
@@ -179,6 +180,7 @@
     "reconcileLabel": "Debris cleanup & removal",
     "reconcileLabelHigh": "Full restoration works",
     "reconcileHighLevel": 4,
+    "criticalLabInclusiveLabel": "Lab equipment (total loss)",
     "items": [
       {
         "label": "Toshiba LCD monitor (replacement)",

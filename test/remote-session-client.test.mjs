@@ -29,7 +29,7 @@ class FakeWebSocket {
   send() {}
 }
 
-test("remote session credentials change closes the old socket before joining the new room", (t) => {
+test("remote session change closes the old socket before joining the new room without auth protocols", (t) => {
   const originalWebSocket = globalThis.WebSocket;
   FakeWebSocket.instances = [];
   globalThis.WebSocket = FakeWebSocket;
@@ -51,21 +51,18 @@ test("remote session credentials change closes the old socket before joining the
       onStatus: () => {},
     },
   );
-  const firstToken = "a".repeat(64);
-  const secondToken = "b".repeat(64);
-
-  client.start("session-one", firstToken);
+  client.start("session-one");
   assert.equal(FakeWebSocket.instances.length, 1);
   const first = FakeWebSocket.instances[0];
   first.readyState = FakeWebSocket.OPEN;
 
-  client.start("session-two", secondToken);
+  client.start("session-two");
   assert.equal(first.closeCount, 1);
   assert.equal(first.onclose, null);
   assert.equal(FakeWebSocket.instances.length, 2);
   const second = FakeWebSocket.instances[1];
   assert.equal(new URL(second.url).searchParams.get("sessionId"), "session-two");
-  assert.deepEqual(second.protocols, [`hakkei-game.${secondToken}`]);
+  assert.equal(second.protocols, undefined);
 
   client.stop();
 });

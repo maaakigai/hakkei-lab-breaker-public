@@ -1,5 +1,6 @@
 *.json
 *.log
-.admin-token
+*.tmp
+submission-runtime/
 !*.example.json
 !.gitignore

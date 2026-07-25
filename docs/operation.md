@@ -31,6 +31,10 @@
 8. HakkeiReadyで構えカウント後に一発パンチする。
 9. VideoPlaybackとResultを確認する。
 
+### 録画専用ダミーQR
+
+画面収録時だけ`scripts/windows/release_demo_qr.bat`を使用できます。登録画面には`DEMO QR — RECORDING ONLY`と`https://example.invalid/hakkei-demo`の無効なQRを表示し、公開サーバーへは通信しません。名前はキーボードで入力します。このモードは実際のQR登録、ランキング同期、ネットワーク疎通の確認には使用しません。
+
 ## 3. 実機なし確認
 
 InputCheckで `録画再生でテスト（実機なし）` を使います。これはBLE録画を再生して経路を確認するための手段であり、MVP完成判定の代替ではありません。
@@ -67,5 +71,27 @@ Keyboardで完走してもMVP完成扱いにはしません。MVP完成はmocopi
 | ゲームを継続したい | `Keyboardに切替（debug fallback）` |
 | Chargeが増えない | 利き手を振っているか、charge/intensity診断 |
 | 動画が出ない | `assets/videos/LV1/`〜`LV5/` のmp4配置。Lv0は動画なしで背景画像を使用 |
+
+## 7. QRサーバー運用
+
+- Release版は、設定されたQR登録・ランキングサーバーへ接続します。運用先への提出版反映後に実機疎通を確認します。
+- 同梱の提出版サーバーは展示当日の保存データを読み込まず、完全な初回起動時に`PLAYER 001`等の合成初期ランキング10件を投入します。その後の新規登録と結果は永続保存します。
+- QR参加、スマートフォン操作、ゲーム側の状態取得・結果送信にtokenは使用しません。
+- 管理用HTTP APIは実装しません。運用者がSSHでサーバーへ入り、`manage.py`をサーバー内で直接実行します。
+- イベントログはサーバー内だけに保存し、公開APIやリポジトリへは含めません。
+- 運用先では、旧展示データが残る`data/`を提出版の保存先に再利用しません。権限`0700`の新規ディレクトリを作り、systemdと`manage.py`の両方へ同じ`HAKKEI_DATA_DIR`を設定します。
+- 前段プロキシを再開する前に、`manage.py list`の`dataDirectory`と、`PLAYER 001`から`PLAYER 010`までの10件だけが入っていることをサーバーローカルで確認します。詳しい順序は[`CloudServer/hakkei-score-server/README.md`](../CloudServer/hakkei-score-server/README.md)を参照してください。
+
+## 8. Critical確認
+
+- Participant Assistでmocopi入力時のチャージ成立基準が下がることと、動作確認用forced CriticalでCriticalを確実に発生させられることを、それぞれ確認します。Assist単独ではCriticalを保証しません。
+- Criticalでは通常Lv映像の後に大型電波塔の映像が再生され、結果へ650億円のボーナスが加わることを確認します。
+- ランキング送信・順位比較には、Criticalボーナス加算前のbase scoreだけが使われることを確認します。
+
+## 9. 公開素材
+
+- ゲーム背景は、共同制作者が撮影した元の研究室写真です。
+- 通常Lv映像は同写真を入力にした1280×720のWan2.2 I2V、Critical専用映像はGeminiを用いた大型電波塔映像です。
+- 公開版のBGM・SFXはすべて無音で、公開MP4には音声トラックがありません。
 
 詳細な合否判定は [verification_checklist_v2_ble.md](verification_checklist_v2_ble.md) に記録します。

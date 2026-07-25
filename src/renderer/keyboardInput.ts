@@ -32,17 +32,34 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export type KeyboardInputHandle = {
   getPressed(): ReadonlySet<KeyboardKey>;
+  setForcedHakkeiMode(mode: ForcedHakkeiMode): void;
   uninstall(): void;
 };
 
-// 安全操作（R/Esc）＋開発用ショートカットをローカルへ通知する。
-export type SafetyKeyHandler = (key: "KeyR" | "Escape" | "KeyH") => boolean | void;
+// 安全操作（R/Esc）＋開発/展示用ショートカットをローカルへ通知する。
+export type SafetyKeyHandler = (key: "KeyR" | "Escape" | "KeyH" | "ForceEnter") => boolean | void;
+export type ForcedHakkeiMode = "none" | "critical";
+export type ForcedHakkeiModeHandler = (mode: ForcedHakkeiMode) => void;
 
 export function installKeyboardInput(
   api: HakkeiPreloadApi,
   onSafetyKey: SafetyKeyHandler,
+  onForcedHakkeiModeChange: ForcedHakkeiModeHandler = () => undefined,
 ): KeyboardInputHandle {
   const pressed = new Set<KeyboardKey>();
+  let forcedHakkeiMode: ForcedHakkeiMode = "none";
+
+  const setForcedHakkeiMode = (next: ForcedHakkeiMode): void => {
+    if (next === forcedHakkeiMode) {
+      return;
+    }
+    forcedHakkeiMode = next;
+    onForcedHakkeiModeChange(next);
+  };
+
+  const toggleForcedHakkeiMode = (target: Exclude<ForcedHakkeiMode, "none">): void => {
+    setForcedHakkeiMode(forcedHakkeiMode === target ? "none" : target);
+  };
 
   const send = (key: KeyboardKey, isDown: boolean, repeat: boolean): void => {
     const payload: KeyboardControlPayload = {
@@ -62,6 +79,10 @@ export function installKeyboardInput(
     if (isEditableTarget(e.target)) {
       return;
     }
+    if (!e.repeat && (e.code === "ControlLeft" || e.code === "ControlRight")) {
+      toggleForcedHakkeiMode("critical");
+      return;
+    }
     const key = CODE_TO_KEY[e.code];
     if (!key) {
       return;
@@ -74,6 +95,13 @@ export function installKeyboardInput(
     pressed.add(key);
     send(key, true, e.repeat || repeat);
 
+    if (!e.repeat && key === "Enter" && forcedHakkeiMode !== "none") {
+      if (onSafetyKey("ForceEnter") === true) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+      return;
+    }
     if (!e.repeat && (key === "KeyR" || key === "Escape" || key === "KeyH")) {
       if (onSafetyKey(key) === true) {
         e.preventDefault();
@@ -99,6 +127,7 @@ export function installKeyboardInput(
 
   return {
     getPressed: () => pressed,
+    setForcedHakkeiMode: (mode) => setForcedHakkeiMode(mode),
     uninstall: () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);

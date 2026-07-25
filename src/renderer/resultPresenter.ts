@@ -5,8 +5,12 @@
 // ここでは「研究室 破損見積書」＝品目×金額（Σ=合計）を組み立てて出す（2026-07-07 見積書システム）。
 
 import type { ScoreBreakdown } from "../shared/types.ts";
-import type { ScoreConfig } from "../shared/configTypes.ts";
-import { buildDamageEstimate, type EstimateLine } from "./damageEstimate.ts";
+import type { CriticalOutcomeConfig, ScoreConfig } from "../shared/configTypes.ts";
+import {
+  buildCriticalEstimate,
+  buildDamageEstimate,
+  type EstimateLine,
+} from "./damageEstimate.ts";
 
 const YEN = new Intl.NumberFormat("ja-JP");
 
@@ -20,9 +24,16 @@ function estimateLinesHtml(lines: EstimateLine[]): string {
 
 function damageReportHtml(
   b: ScoreBreakdown,
+  criticalOutcome: CriticalOutcomeConfig | null,
   report: ScoreConfig["resultDamageReport"],
 ): string {
-  const lines = buildDamageEstimate(b.damageYen, b.videoLevel, b.rank, report);
+  const lines = criticalOutcome
+    ? buildCriticalEstimate(
+        b.baseDamageYen,
+        criticalOutcome.damageItems,
+        report.criticalLabInclusiveLabel,
+      )
+    : buildDamageEstimate(b.damageYen, b.videoLevel, b.rank, report);
 
   if (lines.length === 0) {
     return "";
@@ -38,6 +49,7 @@ function damageReportHtml(
 export function resultHtml(
   b: ScoreBreakdown | null,
   showDebugDetails: boolean,
+  criticalOutcome: CriticalOutcomeConfig | null,
   report: ScoreConfig["resultDamageReport"],
   highScoreHtml = "",
 ): string {
@@ -53,18 +65,23 @@ export function resultHtml(
       : "-";
 
   const r = b.raw;
+  const damageClasses = [
+    "result-focus-damage",
+    criticalOutcome ? "result-focus-damage-critical" : "",
+  ].filter(Boolean).join(" ");
   return `
     <section class="result-focus" aria-label="リザルト">
       <div class="result-focus-label">TOTAL DAMAGE</div>
       <div class="result-focus-damage-wrap">
-        <div id="result-damage-count" class="result-focus-damage" data-final-damage-yen="${b.damageYen}" data-final-damage-raw="${escapeAttr(String(b.damageYenText ?? b.damageYen))}" data-final-damage-text="${formatDamageYen(b.damageYenText ?? b.damageYen)}">
+        <div id="result-damage-count" class="${damageClasses}" data-final-damage-yen="${b.damageYen}" data-final-damage-raw="${escapeAttr(String(b.damageYenText ?? b.damageYen))}" data-final-damage-text="${formatDamageYen(b.damageYenText ?? b.damageYen)}">
           <span class="result-damage-text">¥ 0</span>
         </div>
       </div>
       ${highScoreHtml}
+      ${criticalOutcome ? `<div class="result-critical">CRITICAL: ${escapeHtml(criticalOutcome.label)}</div>` : ""}
       <div class="result-focus-rank rank-${b.rank}">Rank ${b.rank}</div>
     </section>
-    ${damageReportHtml(b, report)}
+    ${damageReportHtml(b, criticalOutcome, report)}
     ${showDebugDetails ? `<table class="result result-detail result-debug-detail">
       <tr><th>Power</th><td>${Math.round(b.power).toLocaleString("ja-JP")}</td></tr>
       <tr><th>動画レベル</th><td>Lv${b.videoLevel}</td></tr>

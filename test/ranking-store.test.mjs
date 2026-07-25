@@ -3,17 +3,14 @@ import assert from "node:assert/strict";
 
 import {
   clearRankingBoard,
-  createEphemeralRankingStorage,
+  criticalBonusFromBreakdown,
   getOrCreatePlayerProfile,
   getOrCreateRemotePlayerProfile,
   findPlayerByNickname,
   importPublicPlayerSuggestions,
-  importRemoteRegisteredPlayers,
-  importServerPlayerRegistry,
   importServerRankingPlayers,
   loadRankingBoard,
   rankingRows,
-  removePlayer,
   recordScoreForPlayer,
   recordScoreForDefaultPlayer,
   registeredNicknameSuggestions,
@@ -36,18 +33,6 @@ class MemoryStorage {
     this.#map.delete(key);
   }
 }
-
-test("ephemeral ranking storage keeps values only in its own in-memory instance", () => {
-  const first = createEphemeralRankingStorage();
-  const second = createEphemeralRankingStorage();
-
-  first.setItem("private-session-data", "ALICE");
-  assert.equal(first.getItem("private-session-data"), "ALICE");
-  assert.equal(second.getItem("private-session-data"), null);
-
-  first.removeItem("private-session-data");
-  assert.equal(first.getItem("private-session-data"), null);
-});
 
 // スコア＝損害額なので、第1引数を baseDamageYen として扱う。
 function breakdown(base, opts = {}) {
@@ -315,62 +300,6 @@ test("registeredNicknameSuggestions limits visible suggestions", () => {
   assert.deepEqual(registeredNicknameSuggestions(board, "mi").map((p) => p.nickname), ["MINE", "MIDO", "MISA", "MIKU"]);
 });
 
-test("importRemoteRegisteredPlayers adds server users to nickname suggestions", () => {
-  const storage = new MemoryStorage();
-
-  importRemoteRegisteredPlayers(storage, [
-    { sessionId: "s1", playerId: "phone-1", playerName: "mirai", registeredAtMs: 1_000 },
-    { sessionId: "s2", playerId: "phone-2", playerName: "miku", registeredAtMs: 2_000, playerNumber: 26002 },
-  ]);
-
-  const board = loadRankingBoard(storage);
-  assert.deepEqual(registeredNicknameSuggestions(board, "mi").map((p) => p.nickname), ["MIRAI", "MIKU"]);
-  assert.deepEqual(board.players.map((p) => p.playerId), ["remote-phone-1", "remote-phone-2"]);
-  assert.equal(board.players.find((p) => p.nickname === "MIKU")?.playerNumber, 26002);
-});
-
-test("importRemoteRegisteredPlayers keeps latest server nickname for same phone license", () => {
-  const storage = new MemoryStorage();
-
-  importRemoteRegisteredPlayers(storage, [
-    { sessionId: "s1", playerId: "phone-1", playerName: "MIRAI", registeredAtMs: 1_000 },
-    { sessionId: "s2", playerId: "phone-1", playerName: "TARO", registeredAtMs: 2_000 },
-  ]);
-
-  const board = loadRankingBoard(storage);
-  assert.equal(board.players.length, 1);
-  assert.equal(board.players[0].nickname, "TARO");
-  assert.deepEqual(registeredNicknameSuggestions(board, "ta").map((p) => p.nickname), ["TARO"]);
-});
-
-test("importServerPlayerRegistry adds canonical server players with display IDs", () => {
-  const storage = new MemoryStorage();
-
-  importServerPlayerRegistry(storage, [
-    {
-      playerId: "remote-phone-1",
-      nickname: "MIRAI",
-      playerNumber: 26001,
-      registeredAtMs: 1_000,
-      lastSeenAtMs: 2_000,
-    },
-    {
-      playerId: "local-abc",
-      nickname: "TOI",
-      playerNumber: 26002,
-      registeredAtMs: 1_100,
-      lastSeenAtMs: null,
-    },
-  ]);
-
-  const board = loadRankingBoard(storage);
-  assert.deepEqual(board.players.map((p) => [p.playerNumber, p.nickname]), [
-    [26001, "MIRAI"],
-    [26002, "TOI"],
-  ]);
-  assert.deepEqual(registeredNicknameSuggestions(board, "to").map((p) => p.playerNumber), [26002]);
-});
-
 test("importPublicPlayerSuggestions adds unplayed registered users without exposing an internal ID", () => {
   const storage = new MemoryStorage();
 
@@ -430,6 +359,7 @@ test("importPublicPlayerSuggestions merges by player number without duplicating 
     registeredAtMs: 1_000,
     lastPlayedAtMs: 5_000,
     highScore: 12_345,
+    highScoreCriticalBonusYen: "0",
     playCount: 2,
   });
 });
@@ -470,9 +400,7 @@ test("importServerRankingPlayers adds scored server users to nickname suggestion
 
 test("importServerRankingPlayers refreshes existing local copy from server ranking", () => {
   const storage = new MemoryStorage();
-  importRemoteRegisteredPlayers(storage, [
-    { sessionId: "s1", playerId: "phone-1", playerName: "MIRAI", registeredAtMs: 1_000 },
-  ]);
+  getOrCreateRemotePlayerProfile(storage, "phone-1", "MIRAI", 1_000, 26001);
 
   importServerRankingPlayers(storage, {
     schemaVersion: 1,
@@ -484,6 +412,7 @@ test("importServerRankingPlayers refreshes existing local copy from server ranki
         registeredAtMs: 1_000,
         lastPlayedAtMs: 3_000,
         highScore: 50000,
+        highScoreCriticalBonusYen: "65000000000",
         playCount: 4,
       },
     ],
@@ -495,7 +424,15 @@ test("importServerRankingPlayers refreshes existing local copy from server ranki
   assert.equal(board.players[0].nickname, "TARO");
   assert.equal(board.players[0].playerNumber, 26001);
   assert.equal(board.players[0].highScore, 50000);
+  assert.equal(board.players[0].highScoreCriticalBonusYen, "65000000000");
   assert.deepEqual(registeredNicknameSuggestions(board, "ta").map((p) => p.nickname), ["TARO"]);
+});
+
+test("合成初期ランキングの PLAYER 001 形式を有効なニックネームとして扱う", () => {
+  const storage = new MemoryStorage();
+  const player = getOrCreatePlayerProfile(storage, "player 001", 1000);
+  assert.equal(player.nickname, "PLAYER 001");
+  assert.equal(validateNickname(player.nickname), true);
 });
 
 test("公開ランキング移行時に同じ公開IDの候補を二重表示しない", () => {
@@ -612,6 +549,32 @@ test("スコアは研究室の損害額で記録し、低い再プレイでは�
   assert.ok(!saved3.record.isHighScore);
 });
 
+test("Critical bonusは順位スコアへ加えず、ハイスコア回の表示用bonusとして分離保存する", () => {
+  const storage = new MemoryStorage();
+  const player = getOrCreatePlayerProfile(storage, "MIRAI", 1000);
+  const critical = {
+    ...breakdown(20_000_000, { power: 700_000 }),
+    damageYen: 65_020_000_000,
+    damageYenText: "65020000000",
+  };
+
+  assert.equal(criticalBonusFromBreakdown(critical), "65000000000");
+  const saved = recordScoreForPlayer(storage, player, critical, 2000);
+  assert.equal(saved.record.score, 20_000_000);
+  assert.equal(saved.record.criticalBonusYen, "65000000000");
+  assert.equal(saved.player.highScore, 20_000_000);
+  assert.equal(saved.player.highScoreCriticalBonusYen, "65000000000");
+
+  const higherBaseWithoutCritical = recordScoreForPlayer(
+    storage,
+    saved.player,
+    breakdown(25_000_000, { power: 700_000 }),
+    3000,
+  );
+  assert.equal(higherBaseWithoutCritical.player.highScore, 25_000_000);
+  assert.equal(higherBaseWithoutCritical.player.highScoreCriticalBonusYen, "0");
+});
+
 test("findPlayerByNickname は大文字小文字を無視して既存プレイヤーを返す（作成しない）", () => {
   const storage = new MemoryStorage();
   getOrCreatePlayerProfile(storage, "MIRAI", 1000);
@@ -621,22 +584,6 @@ test("findPlayerByNickname は大文字小文字を無視して既存プレイ�
   assert.equal(findPlayerByNickname(loadRankingBoard(storage), "UNKNOWN"), null);
   // 呼んでもプレイヤーは増えない。
   assert.equal(loadRankingBoard(storage).players.length, 1);
-});
-
-test("removePlayer はプレイヤーとそのスコア記録を削除する（他プレイヤーは残す）", () => {
-  const storage = new MemoryStorage();
-  const a = getOrCreatePlayerProfile(storage, "ALPHA", 1000);
-  const b = getOrCreatePlayerProfile(storage, "BRAVO", 1000);
-  recordScoreForPlayer(storage, a, breakdown(500), 2000);
-  recordScoreForPlayer(storage, b, breakdown(300), 2000);
-
-  const next = removePlayer(storage, a.playerId);
-  assert.equal(next.players.length, 1);
-  assert.equal(next.players[0].nickname, "BRAVO");
-  assert.equal(next.records.every((r) => r.playerId !== a.playerId), true);
-  // 存在しない ID は無害。
-  const after = removePlayer(storage, "nonexistent");
-  assert.equal(after.players.length, 1);
 });
 
 test("relativeTimeAgo は 1 日未満を分表記する（1 hour ではなく 60 min）", () => {

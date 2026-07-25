@@ -1,7 +1,13 @@
-# Notice
+# 権利・利用条件に関する通知
 
 Copyright © 2026 Hakkei Lab Breaker contributors.
 
-This repository is a portfolio snapshot published for source review and employment evaluation. Unless a file or notice explicitly states otherwise, no license is granted to copy, modify, redistribute, or reuse the project source code or contributor-authored visual material. Rights and provenance for model-generated media, contributor edits, photographs, recordings, and the asset compilation are qualified in [`ASSET_LICENSES.md`](ASSET_LICENSES.md).
+このリポジトリは、ソースコードの確認と採用評価のために公開するポートフォリオ用スナップショットです。各ファイルまたは通知に明示がない限り、プロジェクトのソースコードや共同制作者が制作した視覚素材を複製、改変、再配布、再利用する許諾は与えていません。モデル生成メディア、共同制作者による編集、写真、録画、素材構成の権利と出典に関する限定事項は、[`ASSET_LICENSES.md`](ASSET_LICENSES.md)に記載しています。
 
-Third-party components remain subject to their respective licenses in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Public placeholder-audio provenance is also documented in [`ASSET_LICENSES.md`](ASSET_LICENSES.md).
+第三者コンポーネントには、[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)に記載した各ライセンスが適用されます。公開版の無音プレースホルダーの出典も、[`ASSET_LICENSES.md`](ASSET_LICENSES.md)に記載しています。
+
+ゲーム背景には、撮影者である共同制作者の同意を得て、元の研究室写真を使用しています。通常の破壊動画はWan2.2 I2V、Criticalの大型電波塔動画はGeminiを使用して制作しました。この公開版に収録した音声素材はすべて完全な無音であり、動画には音声トラックがありません。各素材の出典と限定事項は、[`ASSET_LICENSES.md`](ASSET_LICENSES.md)に記録しています。
+
+同梱する提出版サーバー実装には、2026年7月12日の展示記録を含めていません。旧展示データとは別の新規実行時ディレクトリで起動すると、合成ランキング10件を初期データとして作成し、その後の新規登録と結果を永続保存します。この実装には管理用HTTP APIがなく、サーバーローカルのイベントログもリポジトリに含めていません。
+
+2026年7月25日に、この提出版サーバーを設定済みの公開接続先へ反映し、HTTPS / WSS上でQR登録からResult通知・ランキング登録までを確認しました。2026年7月26日には、スマートフォン実機によるQRコードの読み取りと登録フローも確認済みです。反映確認に使用した一時QAデータは削除し、合成初期状態へ戻しています。

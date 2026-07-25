@@ -39,6 +39,11 @@ export type AppConfig = {
       volume: number;
       autoplay: true;
     };
+    criticalBgm: {
+      file: string;
+      loop: true;
+      volume: number;
+    };
     chargeSound: {
       file: string;
       loop: true;
@@ -47,6 +52,14 @@ export type AppConfig = {
     overchargeSound: {
       file: string;
       loop: true;
+      volume: number;
+    };
+    transitionSound: {
+      file: string;
+      volume: number;
+    };
+    criticalVideoStartSound: {
+      file: string;
       volume: number;
     };
     phaseCues: {
@@ -62,6 +75,7 @@ export type AppConfig = {
     resultVoiceSfx: {
       normalCount: number;
       normalVolume: number;
+      criticalVideoNormalVolume: number;
       uniqueVolume: number;
       featuredVolume: number;
       featuredProbability: number;
@@ -245,6 +259,7 @@ export type ScoreConfig = {
     punchReleaseRatio: number; // (0,1]
     chargeNoiseFloor: number; // charge 積算の最小増分（noise 以下は積まない）
     chargeReadyThreshold: number; // チャージ「十分」の目安（BLE 角速度回転°スケール・メーター表示用）
+    participantAssistChargeReadyThreshold: number; // Shift の Participant Assist 中だけ使う表示100%基準
     chargeReadyThresholdKeyboard: number; // 同上 keyboard（擬似手位置 m スケール・Space 数回で満タン目安）
     cooldownMs: number; // パンチ後の不応期
     // 威力スコアモデル（2026-06-27 確定 → 2026-07-06 チャージ補正を割合基準ロジスティックに再設計）。
@@ -305,9 +320,35 @@ export type ScoreConfig = {
     reconcileLabel: string; // 調整行のラベル（低Lv＝粉塵清掃など）
     reconcileLabelHigh: string; // 調整行のラベル（reconcileHighLevel 以上＝原状回復工事など）
     reconcileHighLevel: number; // このレベル以上で reconcileLabelHigh を使う
+    criticalLabInclusiveLabel: string; // Critical 見積書の「研究室設備 全損 一式」行ラベル
     items: ResultDamageReportItemConfig[];
   };
   videoLevels: VideoLevelConfig[];
+};
+
+export type CriticalDamageItemConfig = {
+  label: string;
+  countLabel: string;
+  bonusDamageYen: number | string;
+};
+
+export type CriticalOutcomeConfig = {
+  id: string;
+  label: string;
+  weight: number;
+  labVideoFile?: string;
+  videoFile: string;
+  damageItems: CriticalDamageItemConfig[];
+};
+
+export type CriticalConfig = {
+  schemaVersion: 1;
+  enabled: boolean;
+  baseRateOnSRank: number;
+  maxRateOnSRank: number;
+  rateGamma: number;
+  defaultOutcomeId: string;
+  outcomes: CriticalOutcomeConfig[];
 };
 
 export type AppConfigBundle = {
@@ -316,13 +357,16 @@ export type AppConfigBundle = {
   runtime: {
     uiMode: "release" | "debug";
     localMode: boolean;
+    demoQr: boolean;
   };
   app: AppConfig;
   input: InputConfig;
   score: ScoreConfig;
+  critical: CriticalConfig;
   sourcePaths: {
     app: "config/app.config.json";
     input: "config/input.config.json";
     score: "config/score.config.json";
+    critical: "config/critical.config.json";
   };
 };

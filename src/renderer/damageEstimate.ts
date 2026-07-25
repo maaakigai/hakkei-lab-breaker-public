@@ -4,6 +4,7 @@
 //   - damageYenFromPower: power → 損害総額。Lv アンカー表の区分線形補間（非線形）＋seed 量子化の ±乱数。
 //       旧「power × yenCoefficient」線形を置換。ランク/Lv はアンカー金額に内包（動画の破壊度で較正）。
 //   - buildDamageEstimate: 損害総額を品目へ按分し、Σ=総額 になる見積書行を作る（末尾は調整行で端数吸収）。
+//   - buildCriticalEstimate: Critical 用の見積書行。追加対象＋研究室損害(base)＝総額。
 //
 // すべて決定的（seed=総額/Lv/ランク）＝同じ結果は毎回同じ見積書（リプレイ整合・video-keeper-workflow と別系）。
 
@@ -207,4 +208,32 @@ export function buildDamageEstimate(
     level >= report.reconcileHighLevel ? report.reconcileLabelHigh : report.reconcileLabel;
   lines.push({ label: reconcileLabel, qtyLabel: "1 set", yen: reconcile, kind: "reconcile" });
   return lines;
+}
+
+export function buildCriticalEstimate(
+  baseYen: number,
+  criticalItems: Array<{ label: string; countLabel: string; bonusDamageYen: number | string }>,
+  labInclusiveLabel: string,
+): EstimateLine[] {
+  const lines: EstimateLine[] = criticalItems.map((item) => ({
+    label: item.label,
+    qtyLabel: item.countLabel,
+    yen: toSafeYen(item.bonusDamageYen),
+    kind: "building",
+  }));
+  lines.push({
+    label: labInclusiveLabel,
+    qtyLabel: "1 set",
+    yen: Math.max(0, Math.round(baseYen)),
+    kind: "reconcile",
+  });
+  return lines;
+}
+
+function toSafeYen(value: number | string): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.min(n, Number.MAX_SAFE_INTEGER);
 }

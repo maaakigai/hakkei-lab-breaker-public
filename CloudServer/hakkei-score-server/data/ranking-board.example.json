@@ -1,5 +1,27 @@
 {
   "schemaVersion": 1,
-  "players": [],
-  "records": []
+  "players": [
+    {"playerId": "remote-fixture-001", "nickname": "PLAYER 001", "playerNumber": 26001, "registeredAtMs": 1767225600000, "lastPlayedAtMs": 1767226200000, "highScore": 30000000, "highScoreCriticalBonusYen": "65000000000", "playCount": 1},
+    {"playerId": "remote-fixture-002", "nickname": "PLAYER 002", "playerNumber": 26002, "registeredAtMs": 1767225660000, "lastPlayedAtMs": 1767226260000, "highScore": 27500000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-003", "nickname": "PLAYER 003", "playerNumber": 26003, "registeredAtMs": 1767225720000, "lastPlayedAtMs": 1767226320000, "highScore": 25000000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-004", "nickname": "PLAYER 004", "playerNumber": 26004, "registeredAtMs": 1767225780000, "lastPlayedAtMs": 1767226380000, "highScore": 22500000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-005", "nickname": "PLAYER 005", "playerNumber": 26005, "registeredAtMs": 1767225840000, "lastPlayedAtMs": 1767226440000, "highScore": 20000000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-006", "nickname": "PLAYER 006", "playerNumber": 26006, "registeredAtMs": 1767225900000, "lastPlayedAtMs": 1767226500000, "highScore": 17500000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-007", "nickname": "PLAYER 007", "playerNumber": 26007, "registeredAtMs": 1767225960000, "lastPlayedAtMs": 1767226560000, "highScore": 15000000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-008", "nickname": "PLAYER 008", "playerNumber": 26008, "registeredAtMs": 1767226020000, "lastPlayedAtMs": 1767226620000, "highScore": 12500000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-009", "nickname": "PLAYER 009", "playerNumber": 26009, "registeredAtMs": 1767226080000, "lastPlayedAtMs": 1767226680000, "highScore": 10000000, "highScoreCriticalBonusYen": "0", "playCount": 1},
+    {"playerId": "remote-fixture-010", "nickname": "PLAYER 010", "playerNumber": 26010, "registeredAtMs": 1767226140000, "lastPlayedAtMs": 1767226740000, "highScore": 7500000, "highScoreCriticalBonusYen": "0", "playCount": 1}
+  ],
+  "records": [
+    {"recordId": "fixture-001", "playerId": "remote-fixture-001", "nickname": "PLAYER 001", "score": 30000000, "baseDamageYen": 30000000, "damageYen": 65030000000, "criticalBonusYen": "65000000000", "rank": "S", "videoLevel": 5, "playedAtMs": 1767226200000, "isHighScore": true},
+    {"recordId": "fixture-002", "playerId": "remote-fixture-002", "nickname": "PLAYER 002", "score": 27500000, "baseDamageYen": 27500000, "damageYen": 27500000, "criticalBonusYen": "0", "rank": "S", "videoLevel": 5, "playedAtMs": 1767226260000, "isHighScore": true},
+    {"recordId": "fixture-003", "playerId": "remote-fixture-003", "nickname": "PLAYER 003", "score": 25000000, "baseDamageYen": 25000000, "damageYen": 25000000, "criticalBonusYen": "0", "rank": "A", "videoLevel": 5, "playedAtMs": 1767226320000, "isHighScore": true},
+    {"recordId": "fixture-004", "playerId": "remote-fixture-004", "nickname": "PLAYER 004", "score": 22500000, "baseDamageYen": 22500000, "damageYen": 22500000, "criticalBonusYen": "0", "rank": "A", "videoLevel": 4, "playedAtMs": 1767226380000, "isHighScore": true},
+    {"recordId": "fixture-005", "playerId": "remote-fixture-005", "nickname": "PLAYER 005", "score": 20000000, "baseDamageYen": 20000000, "damageYen": 20000000, "criticalBonusYen": "0", "rank": "A", "videoLevel": 4, "playedAtMs": 1767226440000, "isHighScore": true},
+    {"recordId": "fixture-006", "playerId": "remote-fixture-006", "nickname": "PLAYER 006", "score": 17500000, "baseDamageYen": 17500000, "damageYen": 17500000, "criticalBonusYen": "0", "rank": "B", "videoLevel": 4, "playedAtMs": 1767226500000, "isHighScore": true},
+    {"recordId": "fixture-007", "playerId": "remote-fixture-007", "nickname": "PLAYER 007", "score": 15000000, "baseDamageYen": 15000000, "damageYen": 15000000, "criticalBonusYen": "0", "rank": "B", "videoLevel": 3, "playedAtMs": 1767226560000, "isHighScore": true},
+    {"recordId": "fixture-008", "playerId": "remote-fixture-008", "nickname": "PLAYER 008", "score": 12500000, "baseDamageYen": 12500000, "damageYen": 12500000, "criticalBonusYen": "0", "rank": "C", "videoLevel": 3, "playedAtMs": 1767226620000, "isHighScore": true},
+    {"recordId": "fixture-009", "playerId": "remote-fixture-009", "nickname": "PLAYER 009", "score": 10000000, "baseDamageYen": 10000000, "damageYen": 10000000, "criticalBonusYen": "0", "rank": "C", "videoLevel": 2, "playedAtMs": 1767226680000, "isHighScore": true},
+    {"recordId": "fixture-010", "playerId": "remote-fixture-010", "nickname": "PLAYER 010", "score": 7500000, "baseDamageYen": 7500000, "damageYen": 7500000, "criticalBonusYen": "0", "rank": "D", "videoLevel": 2, "playedAtMs": 1767226740000, "isHighScore": true}
+  ]
 }

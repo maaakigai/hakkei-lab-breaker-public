@@ -1,102 +1,69 @@
-# Asset Licenses
+# 素材の権利・出典
 
-This file covers images, videos, and audio shipped in the public portfolio snapshot. Software dependencies and third-party source code are listed separately in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+この文書では、公開ポートフォリオ版に含まれる画像、動画、音声を扱います。ソフトウェア依存関係と第三者ソースコードは、別途[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)に記載しています。
 
-## Project visual assets
+## プロジェクト制作の視覚素材
 
-### Lab background photograph
+### 研究室背景写真
 
-`assets/images/lab-backgrounds/lab-main-front-16x9-privacy.png` is the public
-16:9 background derived from a 4:3 research-lab photograph taken by a project
-co-creator. The photographer authorized use of the photograph and edited
-versions in the game, this public GitHub portfolio, and employment-application
-materials. This consent also covers use of the original photograph as local
-image-to-video input and publication of the selected and edited outputs for the
-same purposes.
+`assets/images/lab-backgrounds/lab-main-front-16x9.png`は、プロジェクトの共同制作者が撮影した元の4:3研究室写真から作成した16:9のゲーム背景です。公開版では、元の研究室風景を1280×720に合わせて使用しています。
 
-For the public snapshot, an OpenAI image-generation service was used on
-2026-07-25 to make a localized privacy edit: writing, drawings, notices, paper
-contents, and other information-bearing details were removed while the room
-composition was retained. Codex compared the generated privacy-edit
-candidates, and the applicant/co-creator reviewed and approved the adopted
-result and resize to 1280×720. The unredacted 16:9 crop and the original 4:3
-photograph are kept privately and are not included in the public snapshot.
-This records the photographer/co-creator's authorization; it does not assert a
-separate written approval from the facility administrator. Identifying writing,
-notices, paper contents, and people are not retained in the public still image.
+撮影者は、この写真をゲーム、この公開GitHubポートフォリオ、採用応募資料で使用することに同意しています。この同意には、写真をローカル環境で画像から動画への生成（I2V）の入力として使用することと、同じ目的で選定・編集した生成結果を公開することも含まれます。ここで記録しているのは撮影者である共同制作者の許諾であり、施設管理者から別途書面による許可を得ていると表明するものではありません。
 
-### AI-generated destruction videos
+### AI生成の破壊動画
 
-Eighteen MP4 files under `assets/videos/LV1/` through `assets/videos/LV5/`
-were generated locally on 2026-07-05 with the unmodified official
-[`Wan-AI/Wan2.2-I2V-A14B`](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B)
-checkpoint. The privately retained original 4:3 photograph was used as the
-image input. The co-creator who performed the generation confirmed that
-prompts and seed values were fixed for each run; a per-run settings manifest
-is not included in this repository. Two unused comparison candidates from the
-same generation process were removed from the public snapshot.
+`assets/videos/LV1/`から`assets/videos/LV5/`までにある18本のMP4は、2026年7月5日に、改変していない公式[`Wan-AI/Wan2.2-I2V-A14B`](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B)チェックポイントを使い、ローカル環境で生成しました。非公開で保管している元の4:3写真を画像入力として使用しています。生成操作を行った共同制作者は、各生成でプロンプトとシード値を固定したことを確認していますが、生成ごとの設定マニフェストはこのリポジトリに含めていません。同じ生成工程で作成した未使用の比較候補2本は、公開版から除外しました。
 
-The project contributors selected and edited the generated results. The videos
-depict fictional destruction and are not recordings of actual damage. On
-2026-07-25, all 18 public Wan outputs were re-encoded without audio. Every
-frame receives a strong full-frame privacy blur (`gblur=sigma=20:steps=4`) so
-neither the source view nor generated motion can make source-derived writing
-readable. The gameplay videos in
-`assets/videos/LV1/` through `LV5/` are 1280×720 public-portfolio encodes. The
-project retains its full-quality production masters outside this public
-repository.
+Wanの生成操作とプロンプト・シード値の設定は、主にattack114514が担当しました。出力の採用・不採用は、人間の共同制作者2名が共同で判断しました。ゲーム内への配置、動画・音声の統合、再生タイミングの調整は、主にmaaakigaiが担当しました。動画が表現しているのは架空の破壊であり、実際の損壊を撮影したものではありません。`assets/videos/LV1/`から`LV5/`までのゲーム用動画は、公開ポートフォリオ向けに1280×720でエンコードしており、音声トラックを含みません。制作時のフル品質マスターは、この公開リポジトリの外で保管しています。
 
-`assets/videos/lv5_total_destruction.mp4` is a two-second, contributor-created solid-color placeholder retained from an earlier development stage. It is not a Wan2.2 output and is not part of the current `LV1/` through `LV5/` gameplay selection.
+`assets/videos/lv5_total_destruction.mp4`は、開発初期から残している、共同制作者が作成した2秒間の単色プレースホルダーです。Wan2.2の生成物ではなく、現在の`LV1/`から`LV5/`までのゲーム用選択肢にも含まれません。
 
-The official Wan2.2 repository distributes its models under the Apache License 2.0 and states that it claims no rights over generated contents. That statement does not determine whether a particular output is independently copyrightable and does not clear rights in input material or incidental third-party elements; those items are addressed separately here.
+Wan2.2の公式リポジトリでは、モデルをApache License 2.0で配布し、生成コンテンツに対する権利を主張しないと説明しています。この説明だけで、個々の生成結果が独立して著作物となるかどうかが決まるものではなく、入力素材や偶然含まれた第三者要素の権利が処理されるものでもありません。それらについては、この文書内で別途扱います。
 
-### Contributor-created demo and still images
+### Geminiを利用したCritical動画
 
-`docs/media/keyboard-demo.mp4` is a contributor-recorded gameplay demonstration, not an AI-generated destruction video. Project screenshots and other contributor-created still images are included under `docs/images/` and the applicable paths under `assets/images/`.
+Critical演出では、Geminiを使用して制作し、共同制作者が選定した大型電波塔の動画`assets/videos/CriticalVideo/critical-radio-tower.mp4`を使用しています。これはWan2.2 I2Vによる研究室破壊動画群とは別の素材です。共同制作者が出力を確認・選定し、架空の破壊表現として作品へ統合しました。公開版は1280×720で、音声トラックを含みません。Geminiという製品名は生成ツールを明示するために記載しており、提供元による推奨、提携、関与を示すものではありません。
 
-The five generic phase-cue images under `assets/images/cues/` contain only project-authored English instructions and are generated by [`scripts/generate-public-cue-images.ps1`](scripts/generate-public-cue-images.ps1). Exhibition-specific dialogue and related cue artwork are not included in the public snapshot.
+### 共同制作者が作成したデモと静止画
 
-`CloudServer/hakkei-score-server/assets/title/logo.png` is a separate project logo included with the bundled server.
+`docs/media/keyboard-demo.mp4`は共同制作者が録画したゲームプレイデモであり、AI生成の破壊動画ではありません。ゲームのスクリーンショットと、共同制作者が作成したその他の静止画は、`docs/images/`および`assets/images/`以下の該当パスに収録しています。
 
-Copyright © 2026 Hakkei Lab Breaker contributors, for contributor-authored photographs, recordings, edits, and compilation to the extent copyright subsists. This notice does not assert that raw model-generated frames are independently copyrightable. These assets are included for portfolio viewing and evaluation; no separate reuse permission is granted for the contributor-owned portions.
+`assets/images/cues/`以下のフェーズ画像5点は、共同制作者が制作した`GO!!`の視覚表現を基準にしています。`cue-charge-start.png`が、その共同制作者制作の元画像です。残る4点（`集中しろ`、`構えろ`、`撃て`、`火力勝負といこう`）は、`GO!!`をスタイル参照としてOpenAIの画像生成支援を使って作成し、共同制作者が選定、クロマキー除去、1280×720へのサイズ調整、作品への統合を行いました。これらを同じ結果へ再生成するスクリプトは、リポジトリに含めていません。展示固有のキャラクター画像と台詞画像は、公開版に含めていません。
 
-All 20 public MP4 files under `assets/videos/` and `docs/media/` contain no audio track. Audio tracks can be removed reproducibly with `npm run assets:strip-video-audio`; the script copies the encoded video stream without re-encoding it.
+`CloudServer/hakkei-score-server/assets/title/logo.png`は、同梱サーバーで使用する独立したプロジェクトロゴです。
 
-### AI-assisted images
+共同制作者が制作した写真、録画、編集、素材構成について、著作権が成立する範囲でCopyright © 2026 Hakkei Lab Breaker contributorsとします。この表示は、モデルが生成した未加工フレーム自体が独立して著作物となると主張するものではありません。これらの素材はポートフォリオの閲覧と評価のために収録しており、共同制作者が権利を持つ部分について、別途再利用を許諾するものではありません。
 
-The following UI assets were created with image-generation assistance, then selected, edited, and incorporated by the project contributors:
+公開版の`assets/videos/`および`docs/media/`以下に収録したすべてのMP4は、音声トラックを含みません。`npm run assets:strip-video-audio`を使うことで、映像ストリームを再エンコードせずに複製し、音声トラックを再現可能な手順で除去できます。
 
-- `assets/images/title/charge.png`: generated with OpenAI `gpt-image 2.0`; its embedded C2PA Content Credentials identify it as `trainedAlgorithmicMedia` created through the OpenAI Media Service API.
-- `assets/images/hud/hakkei-gauge-frame*.png`: the gauge-frame variants are derived from a generated source image and contributor-made transparency/layout edits.
-- `assets/images/hud/hakkei-gauge-cracks.png`: generated crack texture with contributor-made chroma-key removal and transparency edits.
+### AI支援で制作した画像
 
-This disclosure distinguishes AI-assisted UI assets from the lab photograph, Wan2.2-generated videos, screenshots, and other contributor-produced visual assets; it does not grant separate reuse rights.
+以下のUI素材は画像生成支援を使って制作し、共同制作者が選定、編集、作品への組み込みを行いました。
 
-## Generated placeholder audio
+- `assets/images/title/charge.png`：OpenAIの`gpt-image 2.0`で生成しました。埋め込まれたC2PA Content Credentialsでは、OpenAI Media Service APIを通じて作成された`trainedAlgorithmicMedia`として識別されます。
+- `assets/images/hud/hakkei-gauge-frame*.png`：生成した元画像を基に、共同制作者が透過処理とレイアウト編集を行ったゲージ枠の派生素材です。
+- `assets/images/hud/hakkei-gauge-cracks.png`：生成したひび割れテクスチャに、共同制作者がクロマキー除去と透過編集を行った素材です。
+- `assets/images/cues/cue-stance.png`、`cue-stance-overcharge.png`、`cue-punch.png`、`cue-punch-overcharge.png`：共同制作者が制作した`GO!!`をスタイル参照として、OpenAIの画像生成支援を使って作成し、共同制作者が選定・編集した素材です。
 
-Every audio file included under `assets/Sound/` is generated by [`scripts/generate-placeholder-audio.mjs`](scripts/generate-placeholder-audio.mjs).
+この開示は、AI支援で制作したUI素材と、元の研究室写真、Wan2.2生成動画、Geminiを利用したCritical動画、スクリーンショット、その他の共同制作者制作素材を区別するためのものです。別途再利用を許諾するものではありません。
 
-- `assets/Sound/BGM/` and `assets/Sound/SFX/`: valid PCM WAV containers whose audio samples are all zero (complete silence)
+## 生成した無音プレースホルダー
 
-- Contains recorded speech: no
-- Contains sampled music or sound effects: no
-- Contains synthesized tones: no
-- Uses an external audio-generation service: no
-- Regenerate with: `npm run assets:audio-placeholders`
-- Terms: included for running and evaluating this portfolio snapshot; see [`NOTICE.md`](NOTICE.md)
+`assets/Sound/`以下に収録したすべての音声ファイルは、[`scripts/generate-placeholder-audio.mjs`](scripts/generate-placeholder-audio.mjs)で生成しています。
 
-Audio used during the original exhibition is intentionally not included in this public repository.
+- `assets/Sound/BGM/`および`assets/Sound/SFX/`：音声サンプルがすべて0の、有効なPCM WAVコンテナ（完全な無音）
 
-## Brand names and incidental marks
+- 録音された音声を含む：いいえ
+- サンプリングした音楽または効果音を含む：いいえ
+- 合成音を含む：いいえ
+- 外部の音声生成サービスを使用：いいえ
+- 再生成コマンド：`npm run assets:audio-placeholders`
+- 利用条件：このポートフォリオ版の実行と評価のために収録。詳細は[`NOTICE.md`](NOTICE.md)を参照
 
-Sony and mocopi are trademarks or registered trademarks of their respective owners. Their use in this repository identifies the supported input device and does not imply endorsement.
+元の展示で使用した音声は、意図的にこの公開リポジトリへ含めていません。
 
-The public still image removes readable source-view writing, posters, notices,
-and paper contents. Every frame of each public Wan video receives a strong
-full-frame privacy blur so source views and generated motion cannot make that
-information readable again.
-Incidental, non-prominent product
-marks may remain as parts of the depicted research-lab equipment or as item
-labels in a fictional damage estimate. They are not presented as targets of
-attack or criticism, and their appearance does not imply endorsement,
-sponsorship, affiliation, or partnership with this project.
+## ブランド名と偶然写り込んだ標章
+
+Sonyおよびmocopiは、それぞれの権利者の商標または登録商標です。このリポジトリでは対応入力機器を特定する目的で使用しており、権利者による推奨を示すものではありません。
+
+元の研究室風景、その写真を入力としたI2Vによる架空の破壊表現、または架空の損害見積内の備品名には、目立たない標章、文字、設備が偶然残っている場合があります。これらを攻撃や批判の対象として示しているものではなく、写り込みによって本プロジェクトへの推奨、支援、提携、協力関係が示されるものでもありません。
