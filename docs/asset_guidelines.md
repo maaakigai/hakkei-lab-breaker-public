@@ -51,7 +51,7 @@ Criticalの大型電波塔映像はGeminiを用いて制作した1280×720・音
 |---|---|
 | `assets/images/lab-backgrounds/` | 共同制作者が撮影した元の研究室写真を16:9・1280×720へ合わせたゲーム背景 |
 
-現行の正規背景は`assets/images/lab-backgrounds/lab-main-front-16x9.png`です。撮影者である共同制作者から、ゲーム内利用、Wan I2Vへの入力、生成映像を含むGitHub公開、採用応募資料での利用について同意を得ています。この同意記録は、施設管理者による別個の書面許可があることを表明するものではありません。
+現行の正規背景は`assets/images/lab-backgrounds/lab-main-front-16x9.png`です。撮影者である共同制作者から、ゲーム内利用、Wan I2Vへの入力、生成映像を含むGitHub公開および採用応募への利用同意を得ています。
 
 同じ視点からLv別動画を作る場合は、破壊前の静止画を `assets/images/lab-backgrounds/` に置き、最終的にゲームで再生するmp4を `assets/videos/` に置きます。RendererからはPC依存の絶対パスではなく、静止画は `images/...`、動画は `videos/...` の相対パスで参照します。生成途中の説明文そのままの長いファイル名は避け、レベル別フォルダ内で短い英数字名へ寄せます。未使用の比較候補は公開版へ含めません。
 
