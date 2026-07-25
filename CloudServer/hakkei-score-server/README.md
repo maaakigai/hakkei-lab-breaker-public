@@ -114,6 +114,8 @@ HAKKEI_DATA_DIR=/srv/hakkei/private/submission-runtime \
 
 ランキングAPIだけは、ハイスコアを出した回の表示用Critical加算として`highScoreCriticalBonusYen`も返します。これは非負整数の10進文字列です。候補APIには含めません。内部`playerId`、セッション一覧、個別スコア記録は公開しません。
 
+`POST /api/ranking-score`の成功応答だけは、送信したプレイヤーの行を結果画面で照合するため、トップレベルに`submittedPlayerNumber`を返します。この値は同じ応答内ですでに公開されている`playerNumber`のいずれかであり、`GET /api/ranking-board`には含めません。
+
 次の管理・削除HTTP APIは実装せず、アクセスしても404です。
 
 - 全データreset

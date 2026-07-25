@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  rankingIdentityForResponseRow,
   rankingPlayerFor,
   rankingPositionFor,
 } from "../src/renderer/resultRankingSync.ts";
@@ -98,4 +99,42 @@ test("personal ranking position uses the shared leaderboard ordering", () => {
       ordered.findIndex((ranked) => ranked.playerId === candidate.playerId) + 1,
     );
   }
+});
+
+test("POST response marker stays bound to the player submitted with that request", () => {
+  const submitted = player({
+    playerId: "submitted-a",
+    nickname: "ALICE",
+    playerNumber: undefined,
+  });
+  const current = player({
+    playerId: "current-b",
+    nickname: "BOB",
+    playerNumber: 26002,
+  });
+
+  assert.equal(
+    rankingIdentityForResponseRow(26001, 26001, submitted, current)?.playerId,
+    "submitted-a",
+  );
+  assert.equal(
+    rankingIdentityForResponseRow(26002, 26001, submitted, current)?.playerId,
+    "current-b",
+  );
+});
+
+test("GET response without a submission marker keeps the current player mapping", () => {
+  const current = player({
+    playerId: "current-player",
+    playerNumber: 26002,
+  });
+
+  assert.equal(
+    rankingIdentityForResponseRow(26002, undefined, null, current)?.playerId,
+    "current-player",
+  );
+  assert.equal(
+    rankingIdentityForResponseRow(26001, undefined, null, current),
+    null,
+  );
 });

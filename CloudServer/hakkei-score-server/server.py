@@ -428,7 +428,10 @@ def public_player_suggestions() -> dict[str, object]:
     return {"players": players}
 
 
-def public_ranking_board() -> dict[str, object]:
+def public_ranking_board(
+    *,
+    submitted_player_number: object = None,
+) -> dict[str, object]:
     """Return no persistent IDs or per-play records."""
     board = ranking_board_with_player_numbers()
     players: list[dict[str, object]] = []
@@ -474,7 +477,13 @@ def public_ranking_board() -> dict[str, object]:
             int(player["playerNumber"]),
         )
     )
-    return {"schemaVersion": 1, "players": players}
+    response: dict[str, object] = {"schemaVersion": 1, "players": players}
+    submitted_number = valid_player_number(submitted_player_number)
+    if submitted_number is not None:
+        # POSTしたクライアントが、公開レスポンスから自分の行を安全に特定するための
+        # response-only marker。公開済みのplayerNumberだけを返し、playerIdは公開しない。
+        response["submittedPlayerNumber"] = submitted_number
+    return response
 
 
 def valid_session_id(value: object) -> str | None:
@@ -662,7 +671,9 @@ def record_ranking_score(payload: object) -> dict[str, object] | None:
             None,
             {"playerId": str(record["playerId"])},
         )
-        return public_ranking_board()
+        return public_ranking_board(
+            submitted_player_number=player.get("playerNumber"),
+        )
     updated_player = {
         **player,
         "registeredAtMs": int(existing.get("registeredAtMs", player["registeredAtMs"])) if isinstance(existing, dict) else player["registeredAtMs"],
@@ -685,7 +696,9 @@ def record_ranking_score(payload: object) -> dict[str, object] | None:
         None,
         {"playerId": str(record["playerId"])},
     )
-    return public_ranking_board()
+    return public_ranking_board(
+        submitted_player_number=player.get("playerNumber"),
+    )
 
 
 JOIN_HTML = r"""<!doctype html>

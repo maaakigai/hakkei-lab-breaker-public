@@ -36,6 +36,7 @@ import {
   type SavedScoreResult,
 } from "./rankingStore.ts";
 import {
+  rankingIdentityForResponseRow,
   rankingPlayerFor,
   rankingPositionFor,
 } from "./resultRankingSync.ts";
@@ -3049,7 +3050,10 @@ function isPublicRankingBoard(value: unknown): value is PublicRankingBoard {
   );
 }
 
-function publicRankingBoardAsLocal(value: unknown): RankingBoardData | null {
+function publicRankingBoardAsLocal(
+  value: unknown,
+  submittedPlayer: PlayerProfile | null = null,
+): RankingBoardData | null {
   if (!isPublicRankingBoard(value)) {
     return null;
   }
@@ -3057,13 +3061,12 @@ function publicRankingBoardAsLocal(value: unknown): RankingBoardData | null {
   return {
     schemaVersion: 1,
     players: value.players.map((player) => {
-      const current =
-        (
-          store.currentPlayer?.playerNumber === player.playerNumber ||
-          value.submittedPlayerNumber === player.playerNumber
-        )
-          ? store.currentPlayer
-          : null;
+      const current = rankingIdentityForResponseRow(
+        player.playerNumber,
+        value.submittedPlayerNumber,
+        submittedPlayer,
+        store.currentPlayer,
+      );
       const known =
         current ??
         localPlayers.find(
@@ -3146,7 +3149,7 @@ async function postScoreToServer(saved: SavedScoreResult): Promise<boolean> {
     if (!response.ok) {
       throw new Error(`Ranking server returned ${response.status}.`);
     }
-    const board = publicRankingBoardAsLocal(response.body);
+    const board = publicRankingBoardAsLocal(response.body, saved.player);
     if (board !== null) {
       store.serverRankingBoard = board;
       store.serverRankingStatus = "ready";
