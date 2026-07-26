@@ -178,6 +178,7 @@ interface Store {
   registerDuplicate: PlayerProfile | null; // 同名既存プレイヤー確認中（「あなたですか？」）
   registerSuggestionsDismissed: boolean;
   registerSessionId: string | null;
+  registerGameToken: string | null;
   registerPollStatus: RegisterPollStatus;
   registerPollMessage: string;
   registerReadyAtMs: number | null;
@@ -230,6 +231,7 @@ const store: Store = {
   registerDuplicate: null,
   registerSuggestionsDismissed: false,
   registerSessionId: null,
+  registerGameToken: null,
   registerPollStatus: "idle",
   registerPollMessage: "Scan the QR code with your phone.",
   registerReadyAtMs: null,
@@ -370,6 +372,37 @@ async function requestRemoteApi(request: RemoteHttpRequest): Promise<RemoteHttpR
   }
   return result.value;
 }
+
+async function requestRemoteApiWithRetries(
+  request: RemoteHttpRequest,
+): Promise<RemoteHttpResponse> {
+  let lastResponse: RemoteHttpResponse | null = null;
+  let lastError: unknown = null;
+  for (const retryDelayMs of [0, 250, 750]) {
+    if (retryDelayMs > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelayMs));
+    }
+    try {
+      const response = await requestRemoteApi(request);
+      if (
+        response.ok ||
+        (response.status < 500 && response.status !== 429)
+      ) {
+        return response;
+      }
+      lastResponse = response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastResponse !== null) {
+    return lastResponse;
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Remote request failed.");
+}
+
 const REMOTE_NICKNAME_PATTERN = /^[A-Z0-9._ -]{1,16}$/;
 
 let activeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -406,11 +439,13 @@ let resultScorePostInFlight: Promise<boolean> | null = null;
 let resultRankingBeforeBoard: RankingBoardData | null = null;
 let resultRankingBeforeScore: SavedScoreResult | null = null;
 let lastPhoneNotifiedScore: SavedScoreResult | null = null;
+let phoneResultNotifyInFlight: Promise<boolean> | null = null;
 let registerPollTimer: ReturnType<typeof setInterval> | null = null;
 let registerPollInFlight = false;
 let lastRenderedQrUrl: string | null = null;
 let lastRenderedQrCanvas: HTMLCanvasElement | null = null;
 let autoAdvancedRegisterSessionId: string | null = null;
+let openedRemoteSessionId: string | null = null;
 let phoneInputDeviceVerifyUntilMs = 0;
 let phoneInputDeviceNotifyEpoch = 0;
 const PHONE_INPUT_DEVICE_VERIFY_MS = 900;
@@ -492,6 +527,7 @@ function resetPlayState(): void {
   resultRankingBeforeBoard = null;
   resultRankingBeforeScore = null;
   lastPhoneNotifiedScore = null;
+  phoneResultNotifyInFlight = null;
   lastOverchargeCrackCount = 0;
   criticalResultSfxStarted = false;
   resetHakkeiPrepState();
@@ -706,11 +742,13 @@ function resetRegisterPanelState(): void {
   store.registerDuplicate = null;
   store.registerSuggestionsDismissed = false;
   store.registerSessionId = createRegisterSessionId();
+  store.registerGameToken = createGameToken();
+  openedRemoteSessionId = null;
   store.registerPollStatus = "waiting";
   store.registerPollMessage = isDemoQrMode()
     ? "Recording mode: this QR is intentionally inactive. Enter your name with the keyboard."
     : isRemoteMode()
-      ? "Scan the QR code with your phone."
+      ? "Preparing a secure QR session..."
       : "QR registration is disabled. Enter your name with the keyboard.";
   store.registerReadyAtMs = null;
   store.registerInputCheckNotifiedSessionId = null;
@@ -720,7 +758,10 @@ function resetRegisterPanelState(): void {
   store.registerCancelHandledAtMs = null;
   lastRenderedQrUrl = null;
   lastRenderedQrCanvas = null;
-  void startRemoteSession(store.registerSessionId);
+  void startRemoteSession(
+    store.registerSessionId,
+    store.registerGameToken,
+  );
   void syncRegisteredUsersForSuggestions();
 }
 
@@ -976,11 +1017,79 @@ function handlePhoneReadyCancel(sessionId: string, cancelAtMs: number): void {
   }
 }
 
-async function startRemoteSession(sessionId: string): Promise<void> {
+async function startRemoteSession(
+  sessionId: string,
+  gameToken: string,
+): Promise<void> {
   if (!isRemoteMode()) {
     return;
   }
-  const result = await api.remoteSessionStart({ sessionId });
+  let opened = false;
+  for (const retryDelayMs of [0, 250, 750]) {
+    if (retryDelayMs > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelayMs));
+    }
+    try {
+      const response = await requestRemoteApi({
+        method: "POST",
+        path: "/api/session-open",
+        body: { sessionId, gameToken },
+      });
+      const payload =
+        typeof response.body === "object" && response.body !== null
+          ? response.body as {
+              sessionId?: unknown;
+              opened?: unknown;
+              expiresAtMs?: unknown;
+            }
+          : null;
+      if (
+        !response.ok ||
+        payload?.sessionId !== sessionId ||
+        payload.opened !== true ||
+        typeof payload.expiresAtMs !== "number"
+      ) {
+        throw new Error(`server returned ${response.status}`);
+      }
+      if (
+        store.registerSessionId !== sessionId ||
+        store.registerGameToken !== gameToken
+      ) {
+        return;
+      }
+      opened = true;
+      openedRemoteSessionId = sessionId;
+      store.registerPollStatus = "waiting";
+      store.registerPollMessage = "Scan the QR code with your phone.";
+      lastRenderedQrUrl = null;
+      lastRenderedQrCanvas = null;
+      if (store.state === "Title" && store.titlePanel === "register") {
+        render();
+      }
+      break;
+    } catch (error) {
+      stateLog(
+        "REMOTE",
+        `session open failed ${shortSessionId(sessionId)}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+  if (!opened) {
+    if (
+      store.registerSessionId === sessionId &&
+      store.registerGameToken === gameToken
+    ) {
+      store.registerPollStatus = "error";
+      store.registerPollMessage = "Could not create a secure QR session. You can still enter your name on this PC.";
+      if (store.state === "Title" && store.titlePanel === "register") {
+        render();
+      }
+    }
+    return;
+  }
+  const result = await api.remoteSessionStart({ sessionId, gameToken });
   if (!result.ok) {
     stateLog("REMOTE", `ws start fallback ${shortSessionId(sessionId)}: ${result.messageJa}`);
   }
@@ -1011,8 +1120,10 @@ async function sendRemoteSessionEvent(
 
 async function notifyPhoneInputCheckReady(): Promise<void> {
   const sessionId = store.registerSessionId;
+  const gameToken = store.registerGameToken;
   if (
     !sessionId ||
+    !gameToken ||
     sessionId !== autoAdvancedRegisterSessionId ||
     store.registerInputCheckNotifiedSessionId === sessionId
   ) {
@@ -1028,6 +1139,7 @@ async function notifyPhoneInputCheckReady(): Promise<void> {
       method: "POST",
       path: "/api/session-input-check",
       query: { sessionId },
+      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1041,7 +1153,8 @@ async function notifyPhoneInputCheckReady(): Promise<void> {
 
 async function notifyPhoneInputCheckExit(playStarted: boolean = false): Promise<void> {
   const sessionId = store.registerSessionId;
-  if (!sessionId || sessionId !== autoAdvancedRegisterSessionId) {
+  const gameToken = store.registerGameToken;
+  if (!sessionId || !gameToken || sessionId !== autoAdvancedRegisterSessionId) {
     return;
   }
   if (await sendRemoteSessionEvent(playStarted ? "game.playStarted" : "game.inputExit", sessionId, { playStarted })) {
@@ -1053,6 +1166,7 @@ async function notifyPhoneInputCheckExit(playStarted: boolean = false): Promise<
       method: "POST",
       path: "/api/session-input-exit",
       query: { sessionId, play: playStarted },
+      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1065,7 +1179,8 @@ async function notifyPhoneInputCheckExit(playStarted: boolean = false): Promise<
 
 async function notifyPhoneInputDeviceWaiting(): Promise<void> {
   const sessionId = store.registerSessionId;
-  if (!sessionId || sessionId !== autoAdvancedRegisterSessionId) {
+  const gameToken = store.registerGameToken;
+  if (!sessionId || !gameToken || sessionId !== autoAdvancedRegisterSessionId) {
     return;
   }
   store.registerInputDeviceReadyNotifiedSessionId = null;
@@ -1078,6 +1193,7 @@ async function notifyPhoneInputDeviceWaiting(): Promise<void> {
       method: "POST",
       path: "/api/session-input-check",
       query: { sessionId },
+      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1090,8 +1206,10 @@ async function notifyPhoneInputDeviceWaiting(): Promise<void> {
 
 async function notifyPhoneInputDeviceReady(): Promise<void> {
   const sessionId = store.registerSessionId;
+  const gameToken = store.registerGameToken;
   if (
     !sessionId ||
+    !gameToken ||
     sessionId !== autoAdvancedRegisterSessionId ||
     !inputCheckReady()
   ) {
@@ -1107,6 +1225,7 @@ async function notifyPhoneInputDeviceReady(): Promise<void> {
       method: "POST",
       path: "/api/session-input-check",
       query: { sessionId, ready: true },
+      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
@@ -1182,40 +1301,29 @@ async function notifyReadyPhoneInputDeviceState(epoch: number): Promise<void> {
 
 async function notifyPhoneResult(saved: SavedScoreResult): Promise<boolean> {
   const sessionId = store.registerSessionId;
-  const breakdown = store.breakdown;
+  const gameToken = store.registerGameToken;
   if (
     !sessionId ||
-    !breakdown ||
+    !gameToken ||
     sessionId !== autoAdvancedRegisterSessionId ||
     store.registerResultNotifiedSessionId === sessionId
   ) {
     return store.registerResultNotifiedSessionId === sessionId;
   }
-  store.registerResultNotifiedSessionId = sessionId;
-  const damageYenText = breakdown.damageYenText ?? String(Math.max(0, Math.round(breakdown.damageYen)));
-  if (await sendRemoteSessionEvent("game.result", sessionId, {
-    playerId: saved.player.playerId.replace(/^remote-/, ""),
-    damageYen: Math.max(0, Math.round(breakdown.damageYen)),
-    damageYenText,
-    rank: breakdown.rank,
-  })) {
-    return true;
-  }
   try {
-    const response = await requestRemoteApi({
+    const response = await requestRemoteApiWithRetries({
       method: "POST",
-      path: "/api/session-result",
+      path: "/api/session-result-reveal",
       body: {
         sessionId,
         playerId: saved.player.playerId.replace(/^remote-/, ""),
-        damageYen: Math.max(0, Math.round(breakdown.damageYen)),
-        damageYenText,
-        rank: breakdown.rank,
       },
+      gameToken,
     });
     if (!response.ok) {
       throw new Error(`server returned ${response.status}`);
     }
+    store.registerResultNotifiedSessionId = sessionId;
     return true;
   } catch (error) {
     stateLog("REMOTE", `result notify failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -2548,11 +2656,22 @@ function createRegisterSessionId(): string {
   return `hakkei-${Date.now().toString(36)}-${suffix}`.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
 }
 
+function createGameToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function registerJoinUrl(): string | null {
   if (isDemoQrMode()) {
     return "https://example.invalid/hakkei-demo";
   }
-  if (!store.registerSessionId) {
+  if (
+    !store.registerSessionId ||
+    openedRemoteSessionId !== store.registerSessionId
+  ) {
     return null;
   }
   return `${remoteHttpBaseUrl()}/join?sessionId=${encodeURIComponent(store.registerSessionId)}`;
@@ -3131,20 +3250,23 @@ async function postScoreToServer(saved: SavedScoreResult): Promise<boolean> {
     return true;
   }
   const sessionId = store.registerSessionId;
-  if (!sessionId) {
+  const gameToken = store.registerGameToken;
+  if (!sessionId || !gameToken) {
     store.serverRankingStatus = "error";
     store.serverRankingMessage = "The score session is not available.";
     return false;
   }
   const payload = {
+    sessionId,
     player: saved.player,
     record: saved.record,
   };
   try {
-    const response = await requestRemoteApi({
+    const response = await requestRemoteApiWithRetries({
       method: "POST",
-      path: "/api/ranking-score",
+      path: "/api/session-complete",
       body: payload,
+      gameToken,
     });
     if (!response.ok) {
       throw new Error(`Ranking server returned ${response.status}.`);
@@ -3440,11 +3562,24 @@ function preSyncResultRanking(): void {
 }
 
 function maybeNotifyPhoneResult(saved: SavedScoreResult | null): void {
-  if (saved === null || lastPhoneNotifiedScore === saved) {
+  if (
+    saved === null ||
+    lastPhoneNotifiedScore === saved ||
+    phoneResultNotifyInFlight !== null
+  ) {
     return;
   }
-  lastPhoneNotifiedScore = saved;
-  void notifyPhoneResult(saved);
+  phoneResultNotifyInFlight = syncResultRanking(saved)
+    .then((synced) => synced && notifyPhoneResult(saved))
+    .then((notified) => {
+      if (notified) {
+        lastPhoneNotifiedScore = saved;
+      }
+      return notified;
+    })
+    .finally(() => {
+      phoneResultNotifyInFlight = null;
+    });
 }
 
 function resultHighScoreNoticeHtml(saved: SavedScoreResult | null): string {

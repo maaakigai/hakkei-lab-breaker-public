@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 
 import { RemoteSessionClient } from "../src/main/remoteSessionClient.ts";
 
+const GAME_TOKEN_ONE = "a".repeat(64);
+const GAME_TOKEN_TWO = "b".repeat(64);
+
 class FakeWebSocket {
   static CONNECTING = 0;
   static OPEN = 1;
@@ -29,7 +32,7 @@ class FakeWebSocket {
   send() {}
 }
 
-test("remote session change closes the old socket before joining the new room without auth protocols", (t) => {
+test("remote session change closes the old socket and authenticates the new game room", (t) => {
   const originalWebSocket = globalThis.WebSocket;
   FakeWebSocket.instances = [];
   globalThis.WebSocket = FakeWebSocket;
@@ -51,18 +54,18 @@ test("remote session change closes the old socket before joining the new room wi
       onStatus: () => {},
     },
   );
-  client.start("session-one");
+  client.start("session-one", GAME_TOKEN_ONE);
   assert.equal(FakeWebSocket.instances.length, 1);
   const first = FakeWebSocket.instances[0];
   first.readyState = FakeWebSocket.OPEN;
 
-  client.start("session-two");
+  client.start("session-two", GAME_TOKEN_TWO);
   assert.equal(first.closeCount, 1);
   assert.equal(first.onclose, null);
   assert.equal(FakeWebSocket.instances.length, 2);
   const second = FakeWebSocket.instances[1];
   assert.equal(new URL(second.url).searchParams.get("sessionId"), "session-two");
-  assert.equal(second.protocols, undefined);
+  assert.deepEqual(second.protocols, [`hakkei-game.${GAME_TOKEN_TWO}`]);
 
   client.stop();
 });

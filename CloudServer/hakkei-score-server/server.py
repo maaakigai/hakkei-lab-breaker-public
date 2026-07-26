@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import ipaddress
 import json
 import os
 import re
 import time
 import uuid
+from collections import deque
 from http import HTTPStatus
 from pathlib import Path
 
@@ -24,17 +28,31 @@ DATA_FILE = DATA_DIR / "session-entries.json"
 SESSION_EVENT_LOG_FILE = DATA_DIR / "session-events.log"
 RANKING_FILE = DATA_DIR / "ranking-board.json"
 PLAYERS_FILE = DATA_DIR / "players.json"
+SESSION_AUTH_FILE = DATA_DIR / "session-auth.json"
 SEED_PLAYERS_FILE = SEED_DATA_DIR / "players.example.json"
 SEED_RANKING_FILE = SEED_DATA_DIR / "ranking-board.example.json"
 MAX_BODY_BYTES = 4096
 MAX_WS_MESSAGE_BYTES = 4096
 MAX_NAME_LENGTH = 16
+MAX_SESSION_AUTH_RECORDS = 500
+MAX_SESSION_ENTRIES = 1000
+MAX_RANKING_RECORDS = 2000
+MAX_EVENT_LOG_BYTES = 5 * 1024 * 1024
+SESSION_AUTH_TTL_MS = 2 * 60 * 60 * 1000
+SESSION_ENTRY_RETENTION_MS = 24 * 60 * 60 * 1000
+RATE_WINDOW_SECONDS = 60
+SESSION_OPEN_RATE_LIMIT = 30
+MUTATION_RATE_LIMIT = 180
+WEBSOCKET_RATE_LIMIT = 60
+RATE_KEY_MAX_COUNT = 2048
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 PLAYER_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 PLAYER_NAME_RE = re.compile(r"^[A-Z0-9._ -]{1,16}$")
 EVENT_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+GAME_TOKEN_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 PLAYER_NUMBER_MIN = 26001
 PLAYER_NUMBER_MAX = 26999
+GAME_TOKEN_HEADER = "X-Hakkei-Game-Token"
 
 
 def now_ms() -> int:
@@ -65,10 +83,132 @@ def save_entries(entries: dict[str, dict[str, object]]) -> None:
     write_runtime_json(DATA_FILE, entries)
 
 
+def load_session_auth() -> dict[str, dict[str, object]]:
+    if not SESSION_AUTH_FILE.exists():
+        return {}
+    try:
+        value = json.loads(SESSION_AUTH_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    sessions: dict[str, dict[str, object]] = {}
+    for session_id, raw in value.items():
+        if valid_session_id(session_id) is None or not isinstance(raw, dict):
+            continue
+        token_digest = raw.get("tokenDigest")
+        opened_at_ms = finite_number(raw.get("openedAtMs"))
+        expires_at_ms = finite_number(raw.get("expiresAtMs"))
+        if (
+            not isinstance(token_digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", token_digest) is None
+            or opened_at_ms is None
+            or expires_at_ms is None
+        ):
+            continue
+        sessions[session_id] = {
+            "tokenDigest": token_digest,
+            "openedAtMs": int(opened_at_ms),
+            "expiresAtMs": int(expires_at_ms),
+        }
+    return sessions
+
+
+def save_session_auth(sessions: dict[str, dict[str, object]]) -> None:
+    write_runtime_json(SESSION_AUTH_FILE, sessions)
+
+
+def valid_game_token(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value.lower() if GAME_TOKEN_RE.fullmatch(value) else None
+
+
+def game_token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+
+def prune_expired_session_auth(
+    sessions: dict[str, dict[str, object]],
+    *,
+    at_ms: int | None = None,
+) -> dict[str, dict[str, object]]:
+    current = at_ms if at_ms is not None else now_ms()
+    return {
+        session_id: record
+        for session_id, record in sessions.items()
+        if finite_number(record.get("expiresAtMs")) is not None
+        and int(float(record["expiresAtMs"])) > current
+    }
+
+
+def open_game_session(session_id: str, game_token: str) -> tuple[int, int | None]:
+    sessions = prune_expired_session_auth(load_session_auth())
+    digest = game_token_digest(game_token)
+    existing = sessions.get(session_id)
+    if isinstance(existing, dict):
+        existing_digest = existing.get("tokenDigest")
+        if not isinstance(existing_digest, str) or not hmac.compare_digest(
+            existing_digest,
+            digest,
+        ):
+            return HTTPStatus.CONFLICT, None
+        expires_at_ms = now_ms() + SESSION_AUTH_TTL_MS
+        existing["expiresAtMs"] = expires_at_ms
+        sessions[session_id] = existing
+        save_session_auth(sessions)
+        return HTTPStatus.OK, expires_at_ms
+    if len(sessions) >= MAX_SESSION_AUTH_RECORDS:
+        save_session_auth(sessions)
+        return HTTPStatus.SERVICE_UNAVAILABLE, None
+    opened_at_ms = now_ms()
+    expires_at_ms = opened_at_ms + SESSION_AUTH_TTL_MS
+    sessions[session_id] = {
+        "tokenDigest": digest,
+        "openedAtMs": opened_at_ms,
+        "expiresAtMs": expires_at_ms,
+    }
+    save_session_auth(sessions)
+    append_session_event("session_open", session_id)
+    return HTTPStatus.OK, expires_at_ms
+
+
+def game_session_authorized(
+    session_id: str,
+    token_value: object,
+    *,
+    at_ms: int | None = None,
+) -> bool:
+    game_token = valid_game_token(token_value)
+    if game_token is None:
+        return False
+    sessions = load_session_auth()
+    record = sessions.get(session_id)
+    if not isinstance(record, dict):
+        return False
+    current = at_ms if at_ms is not None else now_ms()
+    expires_at_ms = finite_number(record.get("expiresAtMs"))
+    expected_digest = record.get("tokenDigest")
+    if (
+        expires_at_ms is None
+        or int(expires_at_ms) <= current
+        or not isinstance(expected_digest, str)
+    ):
+        return False
+    return hmac.compare_digest(expected_digest, game_token_digest(game_token))
+
+
 def append_session_event(action: str, session_id: str | None, detail: dict[str, object] | None = None) -> None:
     """Write a server-local operational event without names or request bodies."""
     try:
         DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if (
+            SESSION_EVENT_LOG_FILE.exists()
+            and SESSION_EVENT_LOG_FILE.stat().st_size >= MAX_EVENT_LOG_BYTES
+        ):
+            rotated = SESSION_EVENT_LOG_FILE.with_suffix(".log.1")
+            SESSION_EVENT_LOG_FILE.replace(rotated)
         event: dict[str, object] = {"atMs": now_ms(), "action": action}
         if session_id is not None:
             event["sessionId"] = session_id
@@ -121,7 +261,10 @@ def initialize_runtime_data() -> bool:
             "use a separate access-controlled runtime directory"
         )
     DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if any(path.exists() for path in (DATA_FILE, PLAYERS_FILE, RANKING_FILE)):
+    if any(
+        path.exists()
+        for path in (DATA_FILE, PLAYERS_FILE, RANKING_FILE, SESSION_AUTH_FILE)
+    ):
         return False
 
     registry = _load_seed_json(SEED_PLAYERS_FILE, "player registry")
@@ -145,6 +288,7 @@ def initialize_runtime_data() -> bool:
     write_runtime_json(DATA_FILE, {})
     write_runtime_json(PLAYERS_FILE, registry)
     write_runtime_json(RANKING_FILE, board)
+    write_runtime_json(SESSION_AUTH_FILE, {})
     return True
 
 
@@ -689,7 +833,12 @@ def record_ranking_score(payload: object) -> dict[str, object] | None:
         players[existing_index] = updated_player
     else:
         players.append(updated_player)
-    next_board = {"schemaVersion": 1, "players": players, "records": [*records, record]}
+    next_records = [*records, record][-MAX_RANKING_RECORDS:]
+    next_board = {
+        "schemaVersion": 1,
+        "players": players,
+        "records": next_records,
+    }
     save_ranking_board(next_board)
     append_session_event(
         "ranking_recorded",
@@ -2115,8 +2264,42 @@ JOIN_HTML = r"""<!doctype html>
 
 entries_lock = asyncio.Lock()
 ranking_lock = asyncio.Lock()
+auth_lock = asyncio.Lock()
 session_rooms: dict[str, set[web.WebSocketResponse]] = {}
 seen_event_ids: set[str] = set()
+rate_windows: dict[tuple[str, str], deque[float]] = {}
+
+
+PUBLIC_SESSION_FIELDS = {
+    "sessionId",
+    "playerId",
+    "playerName",
+    "registeredAtMs",
+    "playerNumber",
+    "readyAtMs",
+    "cancelAtMs",
+    "inputCheckAtMs",
+    "inputCheckExitAtMs",
+    "inputDeviceReadyAtMs",
+    "playStartedAtMs",
+    "resultAtMs",
+    "resultExitAtMs",
+    "resultDamageYen",
+    "resultDamageYenText",
+    "resultRank",
+}
+
+
+def public_session_entry(
+    entry: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not isinstance(entry, dict):
+        return None
+    return {
+        key: value
+        for key, value in entry.items()
+        if key in PUBLIC_SESSION_FIELDS
+    }
 
 
 def event_payload(event_type: str, session_id: str, actor: str, entry: dict[str, object] | None = None, **extra: object) -> dict[str, object]:
@@ -2128,8 +2311,9 @@ def event_payload(event_type: str, session_id: str, actor: str, entry: dict[str,
         "sentAtMs": now_ms(),
         "actor": actor,
     }
-    if entry is not None:
-        payload["entry"] = entry
+    public_entry = public_session_entry(entry)
+    if public_entry is not None:
+        payload["entry"] = public_entry
     payload.update(extra)
     return payload
 
@@ -2182,7 +2366,7 @@ async def json_get(request: web.Request) -> web.Response:
             entry = load_entries().get(session_id)
         if entry is None:
             return web.json_response({"error": "entry not found", "sessionId": session_id}, status=HTTPStatus.NOT_FOUND)
-        return web.json_response(entry)
+        return web.json_response(public_session_entry(entry))
     if path == "/api/player-suggestions":
         async with entries_lock:
             async with ranking_lock:
@@ -2199,6 +2383,16 @@ async def mutate_input_state(request: web.Request) -> web.Response:
     session_id = valid_session_id(request.query.get("sessionId"))
     if session_id is None:
         return web.json_response({"error": "invalid sessionId"}, status=HTTPStatus.BAD_REQUEST)
+    async with auth_lock:
+        authorized = game_session_authorized(
+            session_id,
+            request.headers.get(GAME_TOKEN_HEADER),
+        )
+    if not authorized:
+        return web.json_response(
+            {"error": "game authorization failed"},
+            status=HTTPStatus.FORBIDDEN,
+        )
     async with entries_lock:
         entries = load_entries()
         entry = entries.get(session_id)
@@ -2235,19 +2429,264 @@ async def mutate_input_state(request: web.Request) -> web.Response:
         entries[session_id] = entry
         save_entries(entries)
     await broadcast_session(session_id, event_type, "game", entry)
-    return web.json_response(entry)
+    return web.json_response(public_session_entry(entry))
+
+
+def completion_fingerprint(
+    session_id: str,
+    player: dict[str, object],
+    record: object,
+) -> str:
+    canonical = json.dumps(
+        {
+            "sessionId": session_id,
+            "playerId": registry_player_id(player.get("playerId")),
+            "nickname": valid_player_name(player.get("nickname")),
+            "record": record,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+async def complete_session(
+    request: web.Request,
+    payload: dict[str, object],
+) -> web.Response:
+    session_id = valid_session_id(payload.get("sessionId"))
+    player = build_ranking_player(payload.get("player"))
+    if (
+        session_id is None
+        or player is None
+        or build_ranking_record(payload.get("record"), player, 0, 0) is None
+    ):
+        return web.json_response(
+            {"error": "invalid session completion"},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+    async with auth_lock:
+        authorized = game_session_authorized(
+            session_id,
+            request.headers.get(GAME_TOKEN_HEADER),
+        )
+    if not authorized:
+        return web.json_response(
+            {"error": "game authorization failed"},
+            status=HTTPStatus.FORBIDDEN,
+        )
+
+    fingerprint = completion_fingerprint(
+        session_id,
+        player,
+        payload.get("record"),
+    )
+    async with entries_lock:
+        async with ranking_lock:
+            entries = load_entries()
+            entry = entries.get(session_id)
+            if not isinstance(entry, dict):
+                registry_player = upsert_player_registry(
+                    player.get("playerId"),
+                    player.get("nickname"),
+                    registered_at_ms=player.get("registeredAtMs"),
+                )
+                if not isinstance(registry_player, dict):
+                    return web.json_response(
+                        {"error": "player registry limit reached"},
+                        status=HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                entry = {
+                    "sessionId": session_id,
+                    "playerId": str(player["playerId"]),
+                    "playerName": str(player["nickname"]),
+                    "registeredAtMs": int(player["registeredAtMs"]),
+                    "playerNumber": (
+                        registry_player.get("playerNumber")
+                        if isinstance(registry_player, dict)
+                        else None
+                    ),
+                }
+            else:
+                expected_player_id = registry_player_id(entry.get("playerId"))
+                submitted_player_id = registry_player_id(player.get("playerId"))
+                expected_name = valid_player_name(entry.get("playerName"))
+                submitted_name = valid_player_name(player.get("nickname"))
+                if (
+                    expected_player_id != submitted_player_id
+                    or expected_name != submitted_name
+                ):
+                    return web.json_response(
+                        {"error": "ranking score does not match the session player"},
+                        status=HTTPStatus.CONFLICT,
+                    )
+                player = {
+                    **player,
+                    "playerId": expected_player_id,
+                    "nickname": expected_name,
+                    "registeredAtMs": int(
+                        finite_number(entry.get("registeredAtMs"))
+                        or player["registeredAtMs"]
+                    ),
+                }
+
+            previous_fingerprint = entry.get("_completionFingerprint")
+            if isinstance(previous_fingerprint, str):
+                if not hmac.compare_digest(previous_fingerprint, fingerprint):
+                    return web.json_response(
+                        {"error": "session is already completed"},
+                        status=HTTPStatus.CONFLICT,
+                    )
+                return web.json_response(
+                    public_ranking_board(
+                        submitted_player_number=entry.get(
+                            "_completionPlayerNumber"
+                        ),
+                    )
+                )
+
+            board = record_ranking_score(
+                {
+                    "player": player,
+                    "record": payload.get("record"),
+                }
+            )
+            if board is None:
+                return web.json_response(
+                    {"error": "invalid ranking score"},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            record = build_ranking_record(
+                payload.get("record"),
+                player,
+                0,
+                0,
+            )
+            if record is None:
+                return web.json_response(
+                    {"error": "invalid ranking score"},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            entry["_completionFingerprint"] = fingerprint
+            entry["_completionAtMs"] = now_ms()
+            entry["_completionDamageYen"] = record["damageYen"]
+            entry["_completionDamageYenText"] = valid_damage_yen_text(
+                record["damageYen"],
+                record["damageYen"],
+            )
+            entry["_completionRank"] = record["rank"]
+            entry["_completionPlayerNumber"] = board.get(
+                "submittedPlayerNumber"
+            )
+            entries[session_id] = entry
+            save_entries(entries)
+            append_session_event(
+                "session_completed",
+                session_id,
+                {"playerId": str(player["playerId"])},
+            )
+    return web.json_response(board)
+
+
+async def reveal_session_result(
+    request: web.Request,
+    payload: dict[str, object],
+) -> web.Response:
+    session_id = valid_session_id(payload.get("sessionId"))
+    player_id = valid_player_id(payload.get("playerId"))
+    if session_id is None or player_id is None:
+        return web.json_response(
+            {"error": "invalid sessionId or playerId"},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+    async with auth_lock:
+        authorized = game_session_authorized(
+            session_id,
+            request.headers.get(GAME_TOKEN_HEADER),
+        )
+    if not authorized:
+        return web.json_response(
+            {"error": "game authorization failed"},
+            status=HTTPStatus.FORBIDDEN,
+        )
+    async with entries_lock:
+        entries = load_entries()
+        entry = entries.get(session_id)
+        if not isinstance(entry, dict):
+            return web.json_response(
+                {"error": "entry not found", "sessionId": session_id},
+                status=HTTPStatus.NOT_FOUND,
+            )
+        if registry_player_id(entry.get("playerId")) != registry_player_id(
+            player_id
+        ):
+            return web.json_response(
+                {"error": "playerId mismatch"},
+                status=HTTPStatus.FORBIDDEN,
+            )
+        if not isinstance(entry.get("_completionFingerprint"), str):
+            return web.json_response(
+                {"error": "session result is not complete"},
+                status=HTTPStatus.CONFLICT,
+            )
+        if not isinstance(entry.get("resultAtMs"), (int, float)):
+            entry["resultAtMs"] = now_ms()
+            entry["resultDamageYen"] = entry.get("_completionDamageYen")
+            entry["resultDamageYenText"] = entry.get(
+                "_completionDamageYenText"
+            )
+            entry["resultRank"] = entry.get("_completionRank")
+            entry.pop("resultExitAtMs", None)
+            entries[session_id] = entry
+            save_entries(entries)
+            append_session_event(
+                "result_revealed",
+                session_id,
+                {"playerId": player_id},
+            )
+    await broadcast_session(session_id, "game.result", "game", entry)
+    return web.json_response(public_session_entry(entry))
 
 
 async def mutate_json_endpoint(request: web.Request) -> web.Response:
     payload = await read_json_body(request)
     if isinstance(payload, web.Response):
         return payload
-    if request.path == "/api/ranking-score":
-        async with ranking_lock:
-            board = record_ranking_score(payload)
-        if board is None:
-            return web.json_response({"error": "invalid ranking score"}, status=HTTPStatus.BAD_REQUEST)
-        return web.json_response(board)
+    if request.path == "/api/session-open":
+        session_id = valid_session_id(payload.get("sessionId"))
+        game_token = valid_game_token(payload.get("gameToken"))
+        if session_id is None or game_token is None:
+            return web.json_response(
+                {"error": "invalid sessionId or gameToken"},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        async with auth_lock:
+            status, expires_at_ms = open_game_session(
+                session_id,
+                game_token,
+            )
+        if status == HTTPStatus.CONFLICT:
+            return web.json_response(
+                {"error": "session is already owned by another game"},
+                status=status,
+            )
+        if status != HTTPStatus.OK or expires_at_ms is None:
+            return web.json_response(
+                {"error": "active session limit reached"},
+                status=status,
+            )
+        return web.json_response(
+            {
+                "sessionId": session_id,
+                "opened": True,
+                "expiresAtMs": expires_at_ms,
+            }
+        )
+    if request.path == "/api/session-complete":
+        return await complete_session(request, payload)
+    if request.path == "/api/session-result-reveal":
+        return await reveal_session_result(request, payload)
     result = await apply_session_payload(request.path, payload)
     return result
 
@@ -2260,7 +2699,25 @@ async def apply_session_payload(path: str, payload: dict[str, object]) -> web.Re
         if session_id is None or player_id is None or player_name is None:
             return web.json_response({"error": "invalid sessionId, playerId, or playerName"}, status=HTTPStatus.BAD_REQUEST)
         async with entries_lock:
-            previous = load_entries().get(session_id)
+            entries = load_entries()
+            cutoff_ms = now_ms() - SESSION_ENTRY_RETENTION_MS
+            for candidate_id, candidate in list(entries.items()):
+                if candidate_id == session_id or session_rooms.get(candidate_id):
+                    continue
+                if not isinstance(candidate, dict):
+                    entries.pop(candidate_id, None)
+                    continue
+                activity_ms = max(
+                    (
+                        int(value)
+                        for key, value in candidate.items()
+                        if key.endswith("AtMs") and finite_number(value) is not None
+                    ),
+                    default=0,
+                )
+                if activity_ms < cutoff_ms:
+                    entries.pop(candidate_id, None)
+            previous = entries.get(session_id)
             if isinstance(previous, dict) and previous.get("playerId") != player_id:
                 append_session_event(
                     "entry_player_conflict",
@@ -2271,20 +2728,31 @@ async def apply_session_payload(path: str, payload: dict[str, object]) -> web.Re
                     {"error": "session already registered", "sessionId": session_id},
                     status=HTTPStatus.CONFLICT,
                 )
+            if not isinstance(previous, dict) and len(entries) >= MAX_SESSION_ENTRIES:
+                return web.json_response(
+                    {"error": "active session limit reached"},
+                    status=HTTPStatus.SERVICE_UNAVAILABLE,
+                )
             registry_player = upsert_player_registry(player_id, player_name)
-            player_number = registry_player.get("playerNumber") if registry_player is not None else None
-            entry: dict[str, object] = {"sessionId": session_id, "playerId": player_id, "playerName": player_name, "registeredAtMs": now_ms(), "playerNumber": player_number}
-            if isinstance(previous, dict):
-                for key in ("inputCheckAtMs", "inputCheckExitAtMs", "playStartedAtMs", "resultAtMs", "resultExitAtMs", "resultDamageYen", "resultDamageYenText", "resultRank"):
-                    value = previous.get(key)
-                    if isinstance(value, (int, float, str)):
-                        entry[key] = value
-            entries = load_entries()
+            if not isinstance(registry_player, dict):
+                return web.json_response(
+                    {"error": "player registry limit reached"},
+                    status=HTTPStatus.SERVICE_UNAVAILABLE,
+                )
+            player_number = registry_player.get("playerNumber")
+            entry: dict[str, object] = dict(previous) if isinstance(previous, dict) else {}
+            entry.update({
+                "sessionId": session_id,
+                "playerId": player_id,
+                "playerName": player_name,
+                "registeredAtMs": now_ms(),
+                "playerNumber": player_number,
+            })
             entries[session_id] = entry
             save_entries(entries)
             append_session_event("entry_register", session_id, {"playerId": player_id, "hadPrevious": isinstance(previous, dict)})
         await broadcast_session(session_id, "session.registered", "phone", entry, playerId=player_id, playerName=player_name)
-        return web.json_response(entry)
+        return web.json_response(public_session_entry(entry))
 
     session_id = valid_session_id(payload.get("sessionId"))
     player_id = valid_player_id(payload.get("playerId"))
@@ -2314,45 +2782,6 @@ async def apply_session_payload(path: str, payload: dict[str, object]) -> web.Re
             entry.pop("inputDeviceReadyAtMs", None)
             append_session_event("cancel", session_id, {"playerId": player_id})
             event_type = "phone.cancel"
-        elif path == "/api/session-result":
-            damage_yen = finite_number(payload.get("damageYen"))
-            damage_yen_text = payload.get("damageYenText")
-            rank = payload.get("rank")
-            if (
-                damage_yen is None
-                or damage_yen < 0
-                or damage_yen > 9_007_199_254_740_991
-                or not damage_yen.is_integer()
-                or not isinstance(rank, str)
-                or not 1 <= len(rank) <= 16
-                or (
-                    damage_yen_text is not None
-                    and (
-                        not isinstance(damage_yen_text, str)
-                        or len(damage_yen_text) > 32
-                        or re.fullmatch(r"[0-9,]+", damage_yen_text) is None
-                    )
-                )
-            ):
-                return web.json_response(
-                    {"error": "invalid game result"},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
-            safe_damage_yen = int(damage_yen)
-            entry["resultAtMs"] = now_ms()
-            entry["resultDamageYen"] = safe_damage_yen
-            entry["resultDamageYenText"] = valid_damage_yen_text(
-                damage_yen_text,
-                safe_damage_yen,
-            )
-            entry.pop("resultExitAtMs", None)
-            entry["resultRank"] = rank
-            append_session_event(
-                "result",
-                session_id,
-                {"playerId": player_id},
-            )
-            event_type = "game.result"
         elif path == "/api/session-result-exit":
             if not isinstance(entry.get("resultAtMs"), (int, float)):
                 return web.json_response({"error": "result is not available yet", "sessionId": session_id}, status=HTTPStatus.CONFLICT)
@@ -2367,8 +2796,8 @@ async def apply_session_payload(path: str, payload: dict[str, object]) -> web.Re
             return web.json_response({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
         entries[session_id] = entry
         save_entries(entries)
-    await broadcast_session(session_id, event_type, "phone" if event_type.startswith("phone.") else "game", entry)
-    return web.json_response(entry)
+    await broadcast_session(session_id, event_type, "phone", entry)
+    return web.json_response(public_session_entry(entry))
 
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
@@ -2376,8 +2805,26 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     session_id = valid_session_id(request.query.get("sessionId"))
     if client not in ("game", "phone") or session_id is None:
         raise web.HTTPBadRequest(text="invalid websocket query")
+    selected_protocol: str | None = None
+    if client == "game":
+        prefix = "hakkei-game."
+        for candidate in request.headers.get(
+            "Sec-WebSocket-Protocol",
+            "",
+        ).split(","):
+            protocol = candidate.strip()
+            if protocol.startswith(prefix):
+                token = valid_game_token(protocol[len(prefix):])
+                if token is not None:
+                    async with auth_lock:
+                        if game_session_authorized(session_id, token):
+                            selected_protocol = protocol
+                break
+        if selected_protocol is None:
+            raise web.HTTPForbidden(text="game authorization failed")
     ws = web.WebSocketResponse(
         heartbeat=20,
+        protocols=(selected_protocol,) if selected_protocol is not None else (),
         max_msg_size=MAX_WS_MESSAGE_BYTES,
     )
     await ws.prepare(request)
@@ -2427,11 +2874,47 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             if event_type == "client.ping":
                 await ws.send_json(event_payload("server.hello", session_id, "server", None))
                 continue
+            if client == "phone" and event_type not in (
+                "phone.register",
+                "phone.ready",
+                "phone.cancel",
+                "phone.resultExit",
+            ):
+                await ws.send_json(
+                    event_payload(
+                        "server.error",
+                        session_id,
+                        "server",
+                        None,
+                        message="event is not allowed for phone",
+                    )
+                )
+                continue
+            if client == "game" and event_type not in (
+                "game.inputCheck",
+                "game.inputDeviceReady",
+                "game.playStarted",
+                "game.inputExit",
+            ):
+                await ws.send_json(
+                    event_payload(
+                        "server.error",
+                        session_id,
+                        "server",
+                        None,
+                        message="event is not allowed for game",
+                    )
+                )
+                continue
             response = await apply_ws_event(str(event_type), session_id, event)
             if response is not None:
                 await ws.send_json(response)
     finally:
-        session_rooms.get(session_id, set()).discard(ws)
+        room = session_rooms.get(session_id)
+        if room is not None:
+            room.discard(ws)
+            if not room:
+                session_rooms.pop(session_id, None)
     return ws
 
 
@@ -2444,8 +2927,6 @@ async def apply_ws_event(event_type: str, session_id: str, event: dict[str, obje
         response = await apply_session_payload("/api/session-cancel", {**event, "sessionId": session_id})
     elif event_type == "phone.resultExit":
         response = await apply_session_payload("/api/session-result-exit", {**event, "sessionId": session_id})
-    elif event_type == "game.result":
-        response = await apply_session_payload("/api/session-result", {**event, "sessionId": session_id})
     elif event_type in ("game.inputCheck", "game.inputDeviceReady", "game.playStarted", "game.inputExit"):
         async with entries_lock:
             entries = load_entries()
@@ -2492,8 +2973,98 @@ async def not_found(_request: web.Request) -> web.Response:
     )
 
 
+def request_source(request: web.Request) -> str:
+    forwarded = request.headers.get("CF-Connecting-IP", "").strip()
+    if forwarded:
+        try:
+            return str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            pass
+    return request.remote or "unknown"
+
+
+def consume_rate_limit(
+    bucket: str,
+    source: str,
+    limit: int,
+) -> int | None:
+    current = time.monotonic()
+    cutoff = current - RATE_WINDOW_SECONDS
+    key = (bucket, source)
+    timestamps = rate_windows.setdefault(key, deque())
+    while timestamps and timestamps[0] <= cutoff:
+        timestamps.popleft()
+    if len(timestamps) >= limit:
+        return max(1, int(RATE_WINDOW_SECONDS - (current - timestamps[0])))
+    timestamps.append(current)
+    if len(rate_windows) > RATE_KEY_MAX_COUNT:
+        stale = [
+            stale_key
+            for stale_key, values in rate_windows.items()
+            if not values or values[-1] <= cutoff
+        ]
+        for stale_key in stale:
+            rate_windows.pop(stale_key, None)
+        while len(rate_windows) > RATE_KEY_MAX_COUNT:
+            rate_windows.pop(next(iter(rate_windows)))
+    return None
+
+
+@web.middleware
+async def security_headers_middleware(
+    request: web.Request,
+    handler: object,
+) -> web.StreamResponse:
+    response = await handler(request)  # type: ignore[operator]
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
+
+
+@web.middleware
+async def rate_limit_middleware(
+    request: web.Request,
+    handler: object,
+) -> web.StreamResponse:
+    bucket: str | None = None
+    limit = 0
+    if request.method == "POST" and request.path == "/api/session-open":
+        bucket = "session-open"
+        limit = SESSION_OPEN_RATE_LIMIT
+    elif request.path == "/ws":
+        bucket = "websocket"
+        limit = WEBSOCKET_RATE_LIMIT
+    elif request.method == "POST" and (
+        request.path.startswith("/api/session")
+    ):
+        bucket = "mutation"
+        limit = MUTATION_RATE_LIMIT
+    if bucket is None:
+        return await handler(request)  # type: ignore[operator]
+    retry_after = consume_rate_limit(
+        bucket,
+        request_source(request),
+        limit,
+    )
+    if retry_after is not None:
+        return web.json_response(
+            {"error": "rate limit exceeded"},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
+            headers={"Retry-After": str(retry_after)},
+        )
+    return await handler(request)  # type: ignore[operator]
+
+
 def create_app() -> web.Application:
-    app = web.Application(client_max_size=MAX_BODY_BYTES)
+    app = web.Application(
+        client_max_size=MAX_BODY_BYTES,
+        middlewares=[
+            security_headers_middleware,
+            rate_limit_middleware,
+        ],
+    )
     app.router.add_get("/", json_get)
     app.router.add_get("/join", json_get)
     app.router.add_get("/license", json_get)
@@ -2506,12 +3077,13 @@ def create_app() -> web.Application:
     app.router.add_post("/api/session-input-ready", mutate_input_state)
     app.router.add_post("/api/session-input-exit", mutate_input_state)
     for path in (
+        "/api/session-open",
         "/api/session-entry",
         "/api/session-ready",
         "/api/session-cancel",
-        "/api/session-result",
+        "/api/session-complete",
+        "/api/session-result-reveal",
         "/api/session-result-exit",
-        "/api/ranking-score",
     ):
         app.router.add_post(path, mutate_json_endpoint)
     app.router.add_get("/ws", websocket_handler)

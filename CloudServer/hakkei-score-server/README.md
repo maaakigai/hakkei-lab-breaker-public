@@ -32,18 +32,11 @@ python server.py
 
 ## セッション契約
 
-QRには十分長く推測困難な`sessionId`を含む`/join?sessionId=...`を表示します。ゲーム、スマートフォン、サーバーは同じ`sessionId`で状態を共有します。
+QRには十分長く推測困難な`sessionId`を含む`/join?sessionId=...`を表示します。ゲーム、スマートフォン、サーバーは同じ`sessionId`で状態を共有し、従来のQR読取・登録操作は変えません。
 
-展示版と同じ単純な契約へ戻しているため、次の認証機構はありません。
+展示機はQR表示前に256 bitのgame tokenを生成して`POST /api/session-open`へ登録します。サーバーはtokenのSHA-256だけを2時間保持し、ゲームWebSocketとゲーム側HTTP変更を照合します。tokenはQR、URL、スマートフォン画面、イベントログには含めません。join token、phone control token、admin token、管理用HTTP APIはありません。
 
-- game token
-- join token
-- phone control token
-- session-open / session-release token
-- admin token
-- `PUBLIC_DEMO_MODE`
-
-`/ws?client=game|phone&sessionId=...`が主経路です。WebSocketが利用できない場合は同じ`sessionId`を使うHTTP APIへフォールバックします。
+`/ws?client=game|phone&sessionId=...`が主経路です。game接続だけは`hakkei-game.<token>` WebSocket subprotocolを使用し、phone接続は従来どおりです。WebSocketが利用できない場合、ゲーム側は`X-Hakkei-Game-Token`付きHTTP APIへフォールバックします。
 
 ## 永続データ
 
@@ -52,6 +45,7 @@ QRには十分長く推測困難な`sessionId`を含む`/join?sessionId=...`を�
 - `session-entries.json`
 - `players.json`
 - `ranking-board.json`
+- `session-auth.json`
 - `session-events.log`
 
 実行時JSONとログは`.gitignore`対象です。リポジトリには`PLAYER 001`から`PLAYER 010`までの合成初期データだけを収録しています。
@@ -94,13 +88,16 @@ HAKKEI_DATA_DIR=/srv/hakkei/private/submission-runtime \
 ## 公開API
 
 - `GET /join`、`GET /license`: スマートフォン画面
+- `POST /api/session-open`: game tokenをセッションへ登録
 - `POST /api/session-entry`: ニックネーム登録
 - `GET /api/session-entry?sessionId=...`: 当該セッション状態
 - `POST /api/session-ready`、`POST /api/session-cancel`
-- `POST /api/session-input-check`、`POST /api/session-input-ready`、`POST /api/session-input-exit`
-- `POST /api/session-result`、`POST /api/session-result-exit`
+- `POST /api/session-input-check`、`POST /api/session-input-ready`、`POST /api/session-input-exit`: game token必須
+- `POST /api/session-complete`: スコアを1回だけ確定（game token必須）
+- `POST /api/session-result-reveal`: 結果画面で確定済み結果をスマートフォンへ公開（game token必須）
+- `POST /api/session-result-exit`
 - `GET /api/player-suggestions`
-- `GET /api/ranking-board`、`POST /api/ranking-score`
+- `GET /api/ranking-board`
 - `GET /ws`
 
 ランキングと候補APIが返すプレイヤー項目は次の6フィールドです。
@@ -114,7 +111,7 @@ HAKKEI_DATA_DIR=/srv/hakkei/private/submission-runtime \
 
 ランキングAPIだけは、ハイスコアを出した回の表示用Critical加算として`highScoreCriticalBonusYen`も返します。これは非負整数の10進文字列です。候補APIには含めません。内部`playerId`、セッション一覧、個別スコア記録は公開しません。
 
-`POST /api/ranking-score`の成功応答だけは、送信したプレイヤーの行を結果画面で照合するため、トップレベルに`submittedPlayerNumber`を返します。この値は同じ応答内ですでに公開されている`playerNumber`のいずれかであり、`GET /api/ranking-board`には含めません。
+`POST /api/session-complete`の成功応答だけは、送信したプレイヤーの行を結果画面で照合するため、トップレベルに`submittedPlayerNumber`を返します。この値は同じ応答内ですでに公開されている`playerNumber`のいずれかであり、`GET /api/ranking-board`には含めません。同じセッション・同じ結果の再送は成功済み応答を返し、異なる結果への変更は409で拒否します。ランキング確定は従来どおり映像再生開始時に先行し、スマートフォンへの結果公開は結果画面まで行いません。
 
 次の管理・削除HTTP APIは実装せず、アクセスしても404です。
 
@@ -146,7 +143,7 @@ Criticalの金額は`criticalBonusYen`へ別に保存し、`damageYen = baseDama
 
 ## イベントログ
 
-`session-events.log`はサーバー内の運用確認用です。ニックネーム、`playerName`、HTTP request body、payloadは記録しません。HTTPアクセスログはサーバー本体では無効です。
+`session-events.log`はサーバー内の運用確認用です。ニックネーム、`playerName`、HTTP request body、payload、game tokenは記録しません。5 MiBで1世代ローテーションします。HTTPアクセスログはサーバー本体では無効です。
 
 ## テスト
 
@@ -156,8 +153,8 @@ pip install -r requirements.txt
 python -m unittest -v test_server.py
 ```
 
-テストでは、初回の合成データ投入と再投入防止、永続化、WebSocket主系とHTTPフォールバック、入力サイズとschema、ランキング再送の冪等性、Criticalを順位へ加えないこと、公開応答のfield制限、管理・削除HTTP APIの404、サーバーローカル管理、ログの非記録項目を確認します。
+テストでは、初回の合成データ投入と再投入防止、永続化、認証付きWebSocket主系とHTTPフォールバック、tokenなし変更の403、入力サイズとschema、セッション完了の冪等性、結果公開タイミング、Criticalを順位へ加えないこと、公開応答のfield制限、管理・直接スコアAPIの404、サーバーローカル管理、ログの非記録項目を確認します。
 
 ## Internetへ接続する場合
 
-この契約では`sessionId`以外の認証情報を使用しません。公開する場合は、十分長いランダムなsessionId、HTTPS/WSS、前段プロキシでのrate limit、オリジン到達元の制限、保存期間とバックアップ方針を用意してください。実行時データ、バックアップ、展示証拠はWeb公開ディレクトリの外に置いてください。
+公開する場合はHTTPS/WSSとオリジン到達元の制限を維持してください。サーバー本体は送信元別の簡易rate limit、game tokenの2時間TTL、同時セッション上限、ランキング件数上限、イベントログ上限を持ちます。実行時データ、バックアップ、展示証拠はWeb公開ディレクトリの外に置いてください。

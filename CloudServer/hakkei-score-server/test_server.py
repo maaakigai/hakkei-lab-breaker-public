@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from aiohttp import WSMsgType
+from aiohttp.client_exceptions import WSServerHandshakeError
 from aiohttp.test_utils import TestClient, TestServer
 
 import server
@@ -25,6 +26,8 @@ PUBLIC_RANKING_FIELDS = {
     *PUBLIC_SUGGESTION_FIELDS,
     "highScoreCriticalBonusYen",
 }
+GAME_TOKEN = "a" * 64
+OTHER_GAME_TOKEN = "b" * 64
 
 
 class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
@@ -37,18 +40,23 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             server.SESSION_EVENT_LOG_FILE,
             server.RANKING_FILE,
             server.PLAYERS_FILE,
+            server.SESSION_AUTH_FILE,
             server.entries_lock,
             server.ranking_lock,
+            server.auth_lock,
         )
         server.DATA_DIR = data_dir
         server.DATA_FILE = data_dir / "session-entries.json"
         server.SESSION_EVENT_LOG_FILE = data_dir / "session-events.log"
         server.RANKING_FILE = data_dir / "ranking-board.json"
         server.PLAYERS_FILE = data_dir / "players.json"
+        server.SESSION_AUTH_FILE = data_dir / "session-auth.json"
         server.entries_lock = asyncio.Lock()
         server.ranking_lock = asyncio.Lock()
+        server.auth_lock = asyncio.Lock()
         server.session_rooms.clear()
         server.seen_event_ids.clear()
+        server.rate_windows.clear()
         self.client = TestClient(TestServer(server.create_app()))
         await self.client.start_server()
 
@@ -60,11 +68,14 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             server.SESSION_EVENT_LOG_FILE,
             server.RANKING_FILE,
             server.PLAYERS_FILE,
+            server.SESSION_AUTH_FILE,
             server.entries_lock,
             server.ranking_lock,
+            server.auth_lock,
         ) = self.original_state
         server.session_rooms.clear()
         server.seen_event_ids.clear()
+        server.rate_windows.clear()
         self.temp_dir.cleanup()
 
     async def register(
@@ -84,6 +95,32 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 200, await response.text())
         return await response.json()
+
+    async def open_session(
+        self,
+        session_id: str = "session-1",
+        game_token: str = GAME_TOKEN,
+    ) -> dict[str, object]:
+        response = await self.client.post(
+            "/api/session-open",
+            json={"sessionId": session_id, "gameToken": game_token},
+        )
+        self.assertEqual(response.status, 200, await response.text())
+        return await response.json()
+
+    async def complete(
+        self,
+        payload: dict[str, object],
+        *,
+        session_id: str = "session-1",
+        game_token: str = GAME_TOKEN,
+    ):
+        await self.open_session(session_id, game_token)
+        return await self.client.post(
+            "/api/session-complete",
+            json={"sessionId": session_id, **payload},
+            headers={server.GAME_TOKEN_HEADER: game_token},
+        )
 
     def ranking_payload(
         self,
@@ -117,7 +154,8 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             "record": record,
         }
 
-    async def test_tokenless_http_fallback_flow_is_persistent(self) -> None:
+    async def test_authenticated_http_completion_flow_is_persistent(self) -> None:
+        await self.open_session()
         registered = await self.register()
         self.assertEqual(registered["sessionId"], "session-1")
         self.assertEqual(registered["playerNumber"], 26001)
@@ -132,27 +170,34 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
 
         input_check = await self.client.post(
             "/api/session-input-check?sessionId=session-1&ready=1",
+            headers={server.GAME_TOKEN_HEADER: GAME_TOKEN},
         )
         self.assertEqual(input_check.status, 200)
         self.assertIn("inputDeviceReadyAtMs", await input_check.json())
 
         play = await self.client.post(
             "/api/session-input-exit?sessionId=session-1&play=1",
+            headers={server.GAME_TOKEN_HEADER: GAME_TOKEN},
         )
         self.assertEqual(play.status, 200)
         self.assertIn("playStartedAtMs", await play.json())
 
-        result = await self.client.post(
-            "/api/session-result",
-            json={
-                "sessionId": "session-1",
-                "playerId": "phone-1",
-                "damageYen": 1234,
-                "damageYenText": "1,234",
-                "rank": "A",
-            },
+        completed = await self.complete(
+            self.ranking_payload(),
         )
-        self.assertEqual(result.status, 200)
+        self.assertEqual(completed.status, 200, await completed.text())
+        before_reveal = await self.client.get(
+            "/api/session-entry?sessionId=session-1"
+        )
+        self.assertEqual(before_reveal.status, 200)
+        self.assertNotIn("resultAtMs", await before_reveal.json())
+
+        result = await self.client.post(
+            "/api/session-result-reveal",
+            json={"sessionId": "session-1", "playerId": "phone-1"},
+            headers={server.GAME_TOKEN_HEADER: GAME_TOKEN},
+        )
+        self.assertEqual(result.status, 200, await result.text())
         result_body = await result.json()
         self.assertEqual(result_body["resultDamageYen"], 1234)
         self.assertEqual(result_body["resultDamageYenText"], "1234")
@@ -168,9 +213,16 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(persisted["session-1"]["playerName"], "ALICE")
         registry = json.loads(server.PLAYERS_FILE.read_text(encoding="utf-8"))
         self.assertEqual(registry["players"][0]["nickname"], "ALICE")
+        auth = json.loads(server.SESSION_AUTH_FILE.read_text(encoding="utf-8"))
+        self.assertNotEqual(auth["session-1"]["tokenDigest"], GAME_TOKEN)
 
     async def test_first_run_seeds_exact_synthetic_ranking_once(self) -> None:
-        for path in (server.DATA_FILE, server.PLAYERS_FILE, server.RANKING_FILE):
+        for path in (
+            server.DATA_FILE,
+            server.PLAYERS_FILE,
+            server.RANKING_FILE,
+            server.SESSION_AUTH_FILE,
+        ):
             path.unlink(missing_ok=True)
 
         self.assertTrue(server.initialize_runtime_data())
@@ -212,7 +264,12 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             server.DATA_DIR = current_data_dir
 
     async def test_server_local_management_delete_and_reset(self) -> None:
-        for path in (server.DATA_FILE, server.PLAYERS_FILE, server.RANKING_FILE):
+        for path in (
+            server.DATA_FILE,
+            server.PLAYERS_FILE,
+            server.RANKING_FILE,
+            server.SESSION_AUTH_FILE,
+        ):
             path.unlink(missing_ok=True)
         server.initialize_runtime_data()
         server.save_entries(
@@ -246,6 +303,7 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["playerCount"], 0)
         self.assertEqual(snapshot["rankingPlayerCount"], 0)
         self.assertEqual(snapshot["rankingRecordCount"], 0)
+        self.assertEqual(server.load_session_auth(), {})
         self.assertEqual(
             server.SESSION_EVENT_LOG_FILE.read_text(encoding="utf-8"),
             "",
@@ -326,13 +384,70 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         )
         await oversized.close()
 
-    async def test_removed_auth_and_management_endpoints_return_404(self) -> None:
+    async def test_game_mutations_require_the_server_issued_session_token(self) -> None:
+        await self.open_session()
+        await self.register()
+
+        unauthenticated_input = await self.client.post(
+            "/api/session-input-check?sessionId=session-1&ready=1",
+        )
+        self.assertEqual(unauthenticated_input.status, 403)
+
+        wrong_input = await self.client.post(
+            "/api/session-input-check?sessionId=session-1&ready=1",
+            headers={server.GAME_TOKEN_HEADER: OTHER_GAME_TOKEN},
+        )
+        self.assertEqual(wrong_input.status, 403)
+
+        unauthenticated_completion = await self.client.post(
+            "/api/session-complete",
+            json={"sessionId": "session-1", **self.ranking_payload()},
+        )
+        self.assertEqual(unauthenticated_completion.status, 403)
+
+        claimed = await self.client.post(
+            "/api/session-open",
+            json={"sessionId": "session-1", "gameToken": OTHER_GAME_TOKEN},
+        )
+        self.assertEqual(claimed.status, 409)
+
+        with self.assertRaises(WSServerHandshakeError) as rejected:
+            await self.client.ws_connect(
+                "/ws?client=game&sessionId=session-1"
+            )
+        self.assertEqual(rejected.exception.status, 403)
+
+        ws = await self.client.ws_connect(
+            "/ws?client=game&sessionId=session-1",
+            protocols=[f"hakkei-game.{GAME_TOKEN}"],
+        )
+        hello = await ws.receive_json()
+        self.assertEqual(hello["type"], "server.hello")
+        snapshot = await ws.receive_json()
+        self.assertEqual(snapshot["type"], "session.snapshot")
+        await ws.send_json(
+            {
+                "protocolVersion": 1,
+                "eventId": "game-role-check",
+                "type": "phone.register",
+                "sessionId": "session-1",
+                "playerId": "phone-1",
+                "playerName": "ALICE",
+            }
+        )
+        error = await ws.receive_json()
+        self.assertEqual(error["type"], "server.error")
+        self.assertEqual(error["message"], "event is not allowed for game")
+        await ws.close()
+
+    async def test_removed_management_and_direct_score_endpoints_return_404(self) -> None:
         cases = [
             ("GET", "/api/session-entries"),
             ("GET", "/api/players"),
             ("POST", "/api/admin-reset"),
-            ("POST", "/api/session-open"),
             ("POST", "/api/session-release"),
+            ("POST", "/api/session-result"),
+            ("POST", "/api/ranking-score"),
             ("DELETE", "/api/session-entry?sessionId=session-1"),
             ("DELETE", "/api/player?playerId=phone-1"),
             ("GET", "/data/players.json"),
@@ -369,9 +484,8 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_public_ranking_and_suggestions_have_only_ui_fields(self) -> None:
         await self.register()
-        score = await self.client.post(
-            "/api/ranking-score",
-            json=self.ranking_payload(),
+        score = await self.complete(
+            self.ranking_payload(),
         )
         self.assertEqual(score.status, 200, await score.text())
         score_payload = await score.json()
@@ -408,7 +522,7 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             player_id="manual-first-player",
             nickname="NEWCOMER",
         )
-        first = await self.client.post("/api/ranking-score", json=payload)
+        first = await self.complete(payload, session_id="manual-session")
         self.assertEqual(first.status, 200, await first.text())
         first_body = await first.json()
         submitted_number = first_body["submittedPlayerNumber"]
@@ -421,7 +535,7 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             "NEWCOMER",
         )
 
-        duplicate = await self.client.post("/api/ranking-score", json=payload)
+        duplicate = await self.complete(payload, session_id="manual-session")
         self.assertEqual(duplicate.status, 200, await duplicate.text())
         duplicate_body = await duplicate.json()
         self.assertEqual(
@@ -436,6 +550,18 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             )["playCount"],
             1,
         )
+
+        changed = self.ranking_payload(
+            player_id="manual-first-player",
+            nickname="NEWCOMER",
+            played_at_ms=3,
+        )
+        conflict = await self.complete(
+            changed,
+            session_id="manual-session",
+        )
+        self.assertEqual(conflict.status, 409)
+        self.assertEqual(len(server.load_ranking_board()["records"]), 1)
 
         public_response = await self.client.get("/api/ranking-board")
         self.assertEqual(public_response.status, 200)
@@ -455,7 +581,7 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             rank="S",
             video_level=5,
         )
-        first = await self.client.post("/api/ranking-score", json=critical)
+        first = await self.complete(critical, session_id="critical-session-1")
         self.assertEqual(first.status, 200, await first.text())
 
         higher_base = self.ranking_payload(
@@ -468,7 +594,7 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             rank="S",
             video_level=5,
         )
-        second = await self.client.post("/api/ranking-score", json=higher_base)
+        second = await self.complete(higher_base, session_id="base-session-1")
         self.assertEqual(second.status, 200, await second.text())
         public_board = await second.json()
         self.assertEqual(
@@ -500,7 +626,10 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(critical_record["damageYen"], 65_030_000_000)
 
-        repeated = await self.client.post("/api/ranking-score", json=critical)
+        repeated = await self.complete(
+            critical,
+            session_id="critical-session-1",
+        )
         self.assertEqual(repeated.status, 200)
         self.assertEqual(len(server.load_ranking_board()["records"]), 2)
         repeated_player = next(
@@ -520,9 +649,9 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
             rank="S",
             video_level=5,
         )
-        third = await self.client.post(
-            "/api/ranking-score",
-            json=smaller_base_larger_bonus,
+        third = await self.complete(
+            smaller_base_larger_bonus,
+            session_id="critical-session-2",
         )
         self.assertEqual(third.status, 200, await third.text())
         critical_after = next(
@@ -545,25 +674,19 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_ranking_schema_has_no_persistent_side_effect(self) -> None:
         mismatch = self.ranking_payload()
         mismatch["record"]["baseDamageYen"] = 999
-        response = await self.client.post("/api/ranking-score", json=mismatch)
+        response = await self.complete(mismatch, session_id="invalid-1")
         self.assertEqual(response.status, 400)
         self.assertFalse(server.PLAYERS_FILE.exists())
         self.assertFalse(server.RANKING_FILE.exists())
 
         wrong_total = self.ranking_payload(critical_bonus_yen=100)
         wrong_total["record"]["damageYen"] = 1234
-        response = await self.client.post(
-            "/api/ranking-score",
-            json=wrong_total,
-        )
+        response = await self.complete(wrong_total, session_id="invalid-2")
         self.assertEqual(response.status, 400)
 
         invalid_video = self.ranking_payload()
         invalid_video["record"]["videoLevel"] = 6
-        response = await self.client.post(
-            "/api/ranking-score",
-            json=invalid_video,
-        )
+        response = await self.complete(invalid_video, session_id="invalid-3")
         self.assertEqual(response.status, 400)
 
     async def test_http_body_and_session_schema_validation(self) -> None:
@@ -604,15 +727,20 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(mismatch.status, 403)
 
+        await self.open_session()
+        premature_reveal = await self.client.post(
+            "/api/session-result-reveal",
+            json={"sessionId": "session-1", "playerId": "phone-1"},
+            headers={server.GAME_TOKEN_HEADER: GAME_TOKEN},
+        )
+        self.assertEqual(premature_reveal.status, 409)
+
+        invalid_completion = self.ranking_payload()
+        invalid_completion["record"]["score"] = "1234"
         invalid_result = await self.client.post(
-            "/api/session-result",
-            json={
-                "sessionId": "session-1",
-                "playerId": "phone-1",
-                "damageYen": "1234",
-                "damageYenText": "1234",
-                "rank": "A",
-            },
+            "/api/session-complete",
+            json={"sessionId": "session-1", **invalid_completion},
+            headers={server.GAME_TOKEN_HEADER: GAME_TOKEN},
         )
         self.assertEqual(invalid_result.status, 400)
 
@@ -700,15 +828,16 @@ class ScoreServerContractTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(server.load_entries(), {})
 
-    def test_server_source_contains_no_removed_token_or_demo_mode(self) -> None:
+    def test_server_source_keeps_game_token_scoped_to_the_game_client(self) -> None:
         source = Path(server.__file__).read_text(encoding="utf-8")
+        self.assertIn("GAME_TOKEN_HEADER", source)
+        self.assertIn("hashlib.sha256", source)
+        self.assertIn("hmac.compare_digest", source)
         for forbidden in (
             "PUBLIC_DEMO_MODE",
-            "GAME_TOKEN",
             "JOIN_TOKEN",
             "PHONE_CONTROL_TOKEN",
             "ADMIN_TOKEN",
-            "game_session_credentials",
             "join_session_credentials",
         ):
             self.assertNotIn(forbidden, source)

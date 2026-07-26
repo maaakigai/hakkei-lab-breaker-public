@@ -19,4 +19,10 @@ test("Result entry keeps score sync idempotent and notifies the phone separately
     appSource,
     /case "Result": \{\s*const savedScore = ensureResultSaved\(\);\s*if \(savedScore !== null\) \{\s*void syncResultRanking\(savedScore\);\s*maybeNotifyPhoneResult\(savedScore\);\s*\}/,
   );
+  assert.match(appSource, /path: "\/api\/session-complete"/);
+  assert.match(appSource, /path: "\/api\/session-result-reveal"/);
+  assert.match(
+    appSource,
+    /phoneResultNotifyInFlight = syncResultRanking\(saved\)\s*\.then\(\(synced\) => synced && notifyPhoneResult\(saved\)\)/,
+  );
 });
