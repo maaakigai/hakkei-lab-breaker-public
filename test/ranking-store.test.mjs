@@ -364,6 +364,72 @@ test("importPublicPlayerSuggestions merges by player number without duplicating 
   });
 });
 
+test("候補同期は現サーバーにない表示用publicキャッシュだけを削除する", () => {
+  const storage = new MemoryStorage();
+  storage.setItem("hakkei.rankingBoard.v1", JSON.stringify({
+    schemaVersion: 1,
+    players: [
+      {
+        playerId: "local-test",
+        nickname: "TEST",
+        playerNumber: null,
+        registeredAtMs: 1_000,
+        lastPlayedAtMs: 2_000,
+        highScore: 1_536_048,
+        playCount: 1,
+      },
+      {
+        playerId: "public-26012",
+        nickname: "TEST",
+        playerNumber: 26012,
+        registeredAtMs: 1_000,
+        lastPlayedAtMs: 2_000,
+        highScore: 1_536_048,
+        playCount: 1,
+      },
+    ],
+    records: [],
+  }));
+
+  importPublicPlayerSuggestions(storage, []);
+
+  const board = loadRankingBoard(storage);
+  assert.deepEqual(
+    registeredNicknameSuggestions(board, "test").map((player) => [
+      player.playerId,
+      player.nickname,
+    ]),
+    [["local-test", "TEST"]],
+  );
+});
+
+test("候補同期はこのPCのscore recordを持つpublicプレイヤーを削除しない", () => {
+  const storage = new MemoryStorage();
+  storage.setItem("hakkei.rankingBoard.v1", JSON.stringify({
+    schemaVersion: 1,
+    players: [{
+      playerId: "public-26012",
+      nickname: "TEST",
+      playerNumber: 26012,
+      registeredAtMs: 1_000,
+      lastPlayedAtMs: null,
+      highScore: 0,
+      playCount: 0,
+    }],
+    records: [],
+  }));
+  const publicPlayer = loadRankingBoard(storage).players[0];
+  assert.ok(publicPlayer);
+  recordScoreForPlayer(storage, publicPlayer, breakdown(1234), 2_000);
+
+  importPublicPlayerSuggestions(storage, []);
+
+  const board = loadRankingBoard(storage);
+  assert.equal(board.players.length, 1);
+  assert.equal(board.players[0].playerId, "public-26012");
+  assert.equal(board.records.length, 1);
+});
+
 test("importServerRankingPlayers adds scored server users to nickname suggestions", () => {
   const storage = new MemoryStorage();
 

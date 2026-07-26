@@ -511,6 +511,7 @@ export type RemoteSessionEvent = {
 
 export type RemoteSessionStartRequest = {
   sessionId: string;
+  gameToken: string;
 };
 
 export type RemoteSessionSendRequest = {
@@ -532,13 +533,25 @@ export type RemoteHttpRequest =
       method: "POST";
       path: "/api/session-input-check";
       query: { sessionId: string; ready?: boolean };
+      gameToken: string;
     }
   | {
       method: "POST";
       path: "/api/session-input-exit";
       query: { sessionId: string; play?: boolean };
+      gameToken: string;
     }
-  | { method: "POST"; path: "/api/session-result" | "/api/ranking-score"; body: unknown };
+  | {
+      method: "POST";
+      path: "/api/session-open";
+      body: unknown;
+    }
+  | {
+      method: "POST";
+      path: "/api/session-complete" | "/api/session-result-reveal";
+      body: unknown;
+      gameToken: string;
+    };
 
 export type RemoteHttpResponse = {
   status: number;

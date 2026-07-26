@@ -50,6 +50,7 @@ let lastKeyboardSessionId: string | null = null;
 let punchAdapter: PunchInputAdapter | null = null;
 let remoteSessionClient: RemoteSessionClient | null = null;
 const SCORE_ENTRY_BASE_URL = "http://127.0.0.1:45200";
+const GAME_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
 
 function scoreEntryBaseUrl(): string {
   return (configResult.ok ? configResult.value.app.remoteSession.httpBaseUrl : SCORE_ENTRY_BASE_URL).replace(/\/+$/, "");
@@ -200,13 +201,18 @@ function registerIpc(): void {
     if (!isRemoteMode()) {
       return { ok: false, code: "MODE_UNAVAILABLE", messageJa: "QR登録サーバーは無効です" };
     }
-    if (typeof request?.sessionId !== "string" || request.sessionId.length === 0) {
-      return { ok: false, code: "INVALID_REQUEST", messageJa: "sessionId が不正です" };
+    if (
+      typeof request?.sessionId !== "string" ||
+      request.sessionId.length === 0 ||
+      typeof request.gameToken !== "string" ||
+      !GAME_TOKEN_PATTERN.test(request.gameToken)
+    ) {
+      return { ok: false, code: "INVALID_REQUEST", messageJa: "sessionId またはゲーム認証情報が不正です" };
     }
     if (configResult.ok) {
       remoteSessionClient?.updateConfig(configResult.value.app.remoteSession);
     }
-    remoteSessionClient?.start(request.sessionId);
+    remoteSessionClient?.start(request.sessionId, request.gameToken);
     return { ok: true };
   });
 

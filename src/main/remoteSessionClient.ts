@@ -41,6 +41,7 @@ export class RemoteSessionClient {
   private callbacks: Callbacks;
   private socket: WebSocket | null = null;
   private sessionId: string | null = null;
+  private gameToken: string | null = null;
   private retryCount = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private manualStop = false;
@@ -56,8 +57,8 @@ export class RemoteSessionClient {
     this.config = config;
   }
 
-  start(sessionId: string): void {
-    if (this.sessionId !== sessionId) {
+  start(sessionId: string, gameToken: string): void {
+    if (this.sessionId !== sessionId || this.gameToken !== gameToken) {
       this.seenEventIds.clear();
       this.retryCount = 0;
       this.clearReconnectTimer();
@@ -72,6 +73,7 @@ export class RemoteSessionClient {
       }
     }
     this.sessionId = sessionId;
+    this.gameToken = gameToken;
     if (!this.config.enabled) {
       this.emitStatus("disabled");
       return;
@@ -86,6 +88,7 @@ export class RemoteSessionClient {
     this.socket?.close();
     this.socket = null;
     this.sessionId = null;
+    this.gameToken = null;
     this.emitStatus("closed");
   }
 
@@ -125,7 +128,7 @@ export class RemoteSessionClient {
   }
 
   private connect(): void {
-    if (!this.sessionId || this.manualStop) {
+    if (!this.sessionId || !this.gameToken || this.manualStop) {
       return;
     }
     const WebSocketCtor = globalThis.WebSocket;
@@ -143,7 +146,10 @@ export class RemoteSessionClient {
     url.searchParams.set("client", "game");
     url.searchParams.set("sessionId", this.sessionId);
     try {
-      const socket = new WebSocketCtor(url.toString());
+      const socket = new WebSocketCtor(
+        url.toString(),
+        [`hakkei-game.${this.gameToken}`],
+      );
       this.socket = socket;
       socket.onopen = (): void => {
         this.retryCount = 0;

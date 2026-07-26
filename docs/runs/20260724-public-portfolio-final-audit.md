@@ -1,6 +1,6 @@
 # 2026-07-24 公開ポートフォリオ最終監査
 
-> 後続更新注記: この文書は、実参加者データを使う旧共有ランキング構成に対する当時の監査記録です。後から追記した短期・非永続デモの説明も現行仕様ではありません。同梱の提出版は展示データを読み込まず、合成初期ランキング10件から開始して新規登録・結果を永続保存しますが、運用先への反映と実機疎通は別工程です。tokenは使用せず、管理用HTTP APIを持たずにSSH接続後のサーバーローカルCLIだけで管理します。現在の構成はルートの`README.md`、`SPEC.md`、[`20260725-submission-final-audit.md`](20260725-submission-final-audit.md)、[`../EXHIBITION_EVIDENCE.md`](../EXHIBITION_EVIDENCE.md)を優先してください。
+> 後続更新注記: この文書は、実参加者データを使う旧共有ランキング構成に対する当時の監査記録です。後から追記した短期・非永続デモの説明も現行仕様ではありません。同梱の提出版は展示データを読み込まず、合成初期ランキング10件から開始して新規登録・結果を永続保存します。QRはsessionIdだけを含み、ゲーム側変更だけを展示機の短期game tokenで認証します。管理用HTTP APIを持たず、SSH接続後のサーバーローカルCLIだけで管理します。現在の構成はルートの`README.md`、`SPEC.md`、[`20260725-submission-final-audit.md`](20260725-submission-final-audit.md)、[`../EXHIBITION_EVIDENCE.md`](../EXHIBITION_EVIDENCE.md)を優先してください。
 
 ## 対象
 

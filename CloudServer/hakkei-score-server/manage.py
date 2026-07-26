@@ -59,6 +59,12 @@ def delete_player_data(player_id_value: object) -> dict[str, int]:
         if not isinstance(entry, dict)
         or server.registry_player_id(entry.get("playerId")) != player_id
     }
+    removed_session_ids = set(entries) - set(remaining_entries)
+    session_auth = {
+        session_id: auth
+        for session_id, auth in server.load_session_auth().items()
+        if session_id not in removed_session_ids
+    }
 
     removed = {
         "players": len(registry.get("players", [])) - len(registry_players),
@@ -75,11 +81,13 @@ def delete_player_data(player_id_value: object) -> dict[str, int]:
         }
     )
     server.save_entries(remaining_entries)
+    server.save_session_auth(session_auth)
     return removed
 
 
 def reset_runtime_data() -> None:
     server.save_entries({})
+    server.save_session_auth({})
     server.save_player_registry(server.empty_player_registry())
     server.save_ranking_board(server.empty_ranking_board())
     server.DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)

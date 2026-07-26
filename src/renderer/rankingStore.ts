@@ -397,8 +397,35 @@ export function importPublicPlayerSuggestions(
   suggestions: PublicPlayerSuggestion[],
 ): RankingBoardData {
   const board = loadRankingBoard(storage);
-  const players = [...board.players];
+  const authoritativePlayerNumbers = new Set(
+    suggestions
+      .map((suggestion) => normalizePlayerNumber(suggestion.playerNumber))
+      .filter((playerNumber): playerNumber is number => playerNumber !== null),
+  );
+  const localRecordPlayerIds = new Set(
+    board.records.map((record) => record.playerId),
+  );
   let changed = false;
+  const players = board.players.filter((player) => {
+    if (!player.playerId.startsWith("public-")) {
+      return true;
+    }
+    const playerNumber = normalizePlayerNumber(player.playerNumber);
+    if (
+      playerNumber !== null &&
+      authoritativePlayerNumbers.has(playerNumber)
+    ) {
+      return true;
+    }
+    // `public-*`はサーバー応答から作る表示用キャッシュ。現サーバーに存在せず、
+    // このPCで作ったscore recordもなければ安全に破棄できる。
+    // ローカル/QR実プレイヤーと、このPCで実際にプレイした記録は削除しない。
+    if (localRecordPlayerIds.has(player.playerId)) {
+      return true;
+    }
+    changed = true;
+    return false;
+  });
 
   for (const suggestion of suggestions) {
     const nickname = normalizeNickname(suggestion.nickname);

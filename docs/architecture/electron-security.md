@@ -1,4 +1,4 @@
-# Electron security boundary
+# Electronのセキュリティ境界
 
 ## 採用している境界
 
@@ -16,7 +16,7 @@
 
 新規ウィンドウ作成と画面内ナビゲーションもMain Processで拒否します。各HTMLは`default-src 'self'`を基本にしたContent Security Policyを持ちます。
 
-## Main / Preload / Renderer
+## Main・Preload・Rendererの責務分離
 
 - Rendererは`ipcRenderer`そのものを受け取りません。
 - Preloadは`contextBridge`を通じて、用途ごとに名前を付けたAPIだけを公開します。

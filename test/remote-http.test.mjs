@@ -8,6 +8,8 @@ import {
   validateRemoteHttpRequest,
 } from "../src/main/remoteHttp.ts";
 
+const GAME_TOKEN = "a".repeat(64);
+
 test("remote HTTP IPC accepts only the QR/ranking API allowlist", () => {
   assert.equal(validateRemoteHttpRequest({ method: "GET", path: "/api/ranking-board" }), true);
   assert.equal(validateRemoteHttpRequest({ method: "GET", path: "/api/player-suggestions" }), true);
@@ -19,6 +21,14 @@ test("remote HTTP IPC accepts only the QR/ranking API allowlist", () => {
       body: { sessionId: "hakkei-test_01" },
     }),
     false,
+  );
+  assert.equal(
+    validateRemoteHttpRequest({
+      method: "POST",
+      path: "/api/session-open",
+      body: { sessionId: "hakkei-test_01", gameToken: GAME_TOKEN },
+    }),
+    true,
   );
   assert.equal(
     validateRemoteHttpRequest({
@@ -60,7 +70,7 @@ test("remote HTTP request sends validated query and JSON through Main", async (t
         method: request.method,
         url: request.url,
         contentType: request.headers["content-type"],
-        authHeader: request.headers.authorization,
+        gameTokenHeader: request.headers["x-hakkei-game-token"],
         body,
       });
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -82,8 +92,9 @@ test("remote HTTP request sends validated query and JSON through Main", async (t
   });
   const postResult = await performRemoteHttpRequest(baseUrl, {
     method: "POST",
-    path: "/api/session-result",
-    body: { sessionId: "hakkei-test", damageYen: 123 },
+    path: "/api/session-complete",
+    body: { sessionId: "hakkei-test", player: {}, record: {} },
+    gameToken: GAME_TOKEN,
   });
 
   assert.deepEqual(getResult, { status: 200, ok: true, body: { ok: true } });
@@ -93,15 +104,15 @@ test("remote HTTP request sends validated query and JSON through Main", async (t
       method: "GET",
       url: "/api/session-entry?sessionId=hakkei-test",
       contentType: undefined,
-      authHeader: undefined,
+      gameTokenHeader: undefined,
       body: "",
     },
     {
       method: "POST",
-      url: "/api/session-result",
+      url: "/api/session-complete",
       contentType: "application/json",
-      authHeader: undefined,
-      body: JSON.stringify({ sessionId: "hakkei-test", damageYen: 123 }),
+      gameTokenHeader: GAME_TOKEN,
+      body: JSON.stringify({ sessionId: "hakkei-test", player: {}, record: {} }),
     },
   ]);
 });
